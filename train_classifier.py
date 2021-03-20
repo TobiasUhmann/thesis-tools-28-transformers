@@ -12,7 +12,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import DistilBertForSequenceClassification, DistilBertTokenizer
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizer, AdamW
 
 from dao.ower.ower_dir import OwerDir
 from dao.ower.samples_tsv import Sample
@@ -135,7 +135,7 @@ def train_classifier(args):
 
     ##
 
-    _, train_classes_stack, _ = zip(*train_set)
+    _, _, train_classes_stack, _ = zip(*train_set)
     train_classes_stack = numpy.array(train_classes_stack)
     train_freqs = train_classes_stack.mean(axis=0)
 
@@ -146,7 +146,15 @@ def train_classifier(args):
     bert = bert.to(device)
 
     criterion = BCEWithLogitsLoss(pos_weight=class_weights)
-    optimizer = Adam(bert.parameters(), lr=lr)
+    # optimizer = Adam(bert.parameters(), lr=lr)
+
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in bert.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': 0.01},
+        {'params': [p for n, p in bert.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    ]
+    optimizer = AdamW(optimizer_grouped_parameters, lr=1e-5)
 
     writer = SummaryWriter(log_dir=log_dir)
 
@@ -161,7 +169,12 @@ def train_classifier(args):
 
         bert.train()
 
-        for ctxt_batch, gt_classes_batch in tqdm(train_loader):
+        for step, (ctxt_batch, gt_classes_batch) in enumerate(tqdm(train_loader)):
+            metrics = {
+                'train': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []},
+                'valid': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
+            }
+
             input_ids_batch = ctxt_batch.input_ids.to(device)
             attention_mask_batch = ctxt_batch.attention_mask.to(device)
             gt_classes_batch = gt_classes_batch.to(device)
@@ -175,7 +188,14 @@ def train_classifier(args):
 
             track_metrics(metrics['train'], loss, outputs_batch, gt_classes_batch)
 
-            break
+            ## Log loss
+
+            writer.add_scalars('loss', {'train': metrics['train']['loss']}, step)
+
+            ## Log metrics
+
+            log_class_metrics(metrics, writer, step, class_count)
+            log_macro_metrics(metrics, writer, step)
 
         ## Validate
 
@@ -191,17 +211,17 @@ def train_classifier(args):
 
             track_metrics(metrics['valid'], loss, outputs_batch, gt_classes_batch)
 
-        ## Log loss
-
-        train_loss = metrics['train']['loss'] / len(train_loader)
-        valid_loss = metrics['valid']['loss'] / len(valid_loader)
-
-        writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
-
-        ## Log metrics
-
-        log_class_metrics(metrics, writer, epoch, class_count)
-        log_macro_metrics(metrics, writer, epoch)
+        # ## Log loss
+        #
+        # train_loss = metrics['train']['loss'] / len(train_loader)
+        # valid_loss = metrics['valid']['loss'] / len(valid_loader)
+        #
+        # writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
+        #
+        # ## Log metrics
+        #
+        # log_class_metrics(metrics, writer, epoch, class_count)
+        # log_macro_metrics(metrics, writer, epoch)
 
 
 def track_metrics(metrics: Dict, loss: Tensor, outputs_batch: Tensor, gt_classes_batch: Tensor) -> None:
