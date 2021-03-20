@@ -2,10 +2,10 @@ import logging
 from argparse import ArgumentParser
 from pathlib import Path
 from random import shuffle
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import torch
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, precision_score, recall_score, precision_recall_fscore_support
 from torch import Tensor, tensor
 from torch.nn import BCEWithLogitsLoss
 from torch.optim import Adam
@@ -120,130 +120,151 @@ def train_classifier(args):
     def generate_batch(batch: List[Sample]) -> Tuple[Tensor, Tensor]:
         _, _, classes_batch, sents_batch = zip(*batch)
 
-        for sents in sents_batch:
-            shuffle(sents)
+        stretched_sent_batch = [sent for sents in sents_batch for sent in sents]
 
-        contexts_batch = [' '.join(sents) for sents in sents_batch]
+        extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
+        stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in extended_classes]
 
-        encoded_batch = tokenizer(contexts_batch, padding=True, truncation=True, max_length=sent_len,
+        encoded_batch = tokenizer(stretched_sent_batch, padding=True, truncation=True, max_length=sent_len,
                                   return_tensors='pt')
 
-        return encoded_batch, tensor(classes_batch)
+        return encoded_batch, tensor(stretched_classes_batch)
 
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
 
     ## Train
 
+    bert = bert.to(device)
+
     criterion = BCEWithLogitsLoss()
     optimizer = Adam(bert.parameters(), lr=lr)
-
-    bert = bert.to(device)
 
     writer = SummaryWriter(log_dir=log_dir)
 
     for epoch in range(epoch_count):
 
+        metrics = {
+            'train': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []},
+            'valid': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
+        }
+
         ## Train
 
-        train_loss = 0.0
-
-        # Valid gt/pred classes across all batches
-        train_gt_classes_stack: List[List[int]] = []
-        train_pred_classes_stack: List[List[int]] = []
-
         bert.train()
-        for step, (ctxt_batch, gt_batch) in enumerate(tqdm(train_loader)):
-            input_ids = ctxt_batch.input_ids.to(device)
-            attention_mask = ctxt_batch.attention_mask.to(device)
-            gt_batch = gt_batch.to(device)
 
-            pred_batch = bert(input_ids, attention_mask).logits
+        for ctxt_batch, gt_classes_batch in tqdm(train_loader):
+            input_ids_batch = ctxt_batch.input_ids.to(device)
+            attention_mask_batch = ctxt_batch.attention_mask.to(device)
+            gt_classes_batch = gt_classes_batch.to(device)
 
-            loss = criterion(gt_batch.float(), pred_batch)
+            outputs_batch = bert(input_ids_batch, attention_mask_batch).logits
+            loss = criterion(outputs_batch, gt_classes_batch.float())
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            pred_classes_batch = (pred_batch > 0).int()
+            track_metrics(metrics['train'], loss, outputs_batch, gt_classes_batch)
 
-            train_gt_classes_stack += gt_batch.cpu().numpy().tolist()
-            train_pred_classes_stack += pred_classes_batch.cpu().numpy().tolist()
-
-            train_loss += loss.item()
+            break
 
         ## Validate
 
-        valid_loss = 0.0
-
-        # Valid gt/pred classes across all batches
-        valid_gt_classes_stack: List[List[int]] = []
-        valid_pred_classes_stack: List[List[int]] = []
-
         bert.eval()
-        for step, (ctxt_batch, gt_batch) in enumerate(tqdm(valid_loader)):
-            input_ids = ctxt_batch.input_ids.to(device)
-            attention_mask = ctxt_batch.attention_mask.to(device)
-            gt_batch = gt_batch.to(device)
 
-            outputs_batch = bert(input_ids, attention_mask).logits
-            loss = criterion(outputs_batch, gt_batch.float())
+        for ctxt_batch, gt_classes_batch in tqdm(valid_loader):
+            input_ids_batch = ctxt_batch.input_ids.to(device)
+            attention_mask_batch = ctxt_batch.attention_mask.to(device)
+            gt_classes_batch = gt_classes_batch.to(device)
 
-            valid_loss += loss.item()
+            outputs_batch = bert(input_ids_batch, attention_mask_batch).logits
+            loss = criterion(outputs_batch, gt_classes_batch.float())
 
-            pred_classes_batch = (outputs_batch > 0).int()
-
-            valid_gt_classes_stack += gt_batch.cpu().numpy().tolist()
-            valid_pred_classes_stack += pred_classes_batch.cpu().numpy().tolist()
+            track_metrics(metrics['valid'], loss, outputs_batch, gt_classes_batch)
 
         ## Log loss
 
-        train_loss /= len(train_loader)
-        valid_loss /= len(valid_loader)
+        train_loss = metrics['train']['loss'] / len(train_loader)
+        valid_loss = metrics['valid']['loss'] / len(valid_loader)
 
         writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
 
-        ## Log metrics for most/least common classes
+        ## Log metrics
 
-        # tps = train precisions, vps = valid precisions, etc.
-        tps = precision_score(train_gt_classes_stack, train_pred_classes_stack, average=None)
-        vps = precision_score(valid_gt_classes_stack, valid_pred_classes_stack, average=None)
-        trs = recall_score(train_gt_classes_stack, train_pred_classes_stack, average=None)
-        vrs = recall_score(valid_gt_classes_stack, valid_pred_classes_stack, average=None)
-        tfs = f1_score(train_gt_classes_stack, train_pred_classes_stack, average=None)
-        vfs = f1_score(valid_gt_classes_stack, valid_pred_classes_stack, average=None)
+        log_class_metrics(metrics, writer, epoch, class_count)
+        log_macro_metrics(metrics, writer, epoch)
 
-        # Log metrics for each class c
-        for c, (tp, vp, tr, vr, tf, vf), in enumerate(zip(tps, vps, trs, vrs, tfs, vfs)):
 
-            # many classes -> log only first and last ones
-            if (class_count > 2 * 3) and (3 <= c <= len(tps) - 3 - 1):
-                continue
+def track_metrics(metrics: Dict, loss: Tensor, outputs_batch: Tensor, gt_classes_batch: Tensor) -> None:
+    """
+    :param metrics: {'loss': loss, 'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}
+    """
 
-            writer.add_scalars('precision', {f'train_{c}': tp}, epoch)
-            writer.add_scalars('precision', {f'valid_{c}': vp}, epoch)
-            writer.add_scalars('recall', {f'train_{c}': tr}, epoch)
-            writer.add_scalars('recall', {f'valid_{c}': vr}, epoch)
-            writer.add_scalars('f1', {f'train_{c}': tf}, epoch)
-            writer.add_scalars('f1', {f'valid_{c}': vf}, epoch)
+    pred_classes_batch = (outputs_batch > 0).int()
 
-        ## Log macro metrics over all classes
+    metrics['loss'] += loss.item()
+    metrics['pred_classes_stack'] += pred_classes_batch.cpu().numpy().tolist()
+    metrics['gt_classes_stack'] += gt_classes_batch.cpu().numpy().tolist()
 
-        # mtp = mean train precision, mvp = mean valid precision, etc.
-        mtp = tps.mean()
-        mvp = vps.mean()
-        mtr = trs.mean()
-        mvr = vrs.mean()
-        mtf = tfs.mean()
-        mvf = vfs.mean()
 
-        writer.add_scalars('precision', {'train': mtp}, epoch)
-        writer.add_scalars('precision', {'valid': mvp}, epoch)
-        writer.add_scalars('recall', {'train': mtr}, epoch)
-        writer.add_scalars('recall', {'valid': mvr}, epoch)
-        writer.add_scalars('f1', {'train': mtf}, epoch)
-        writer.add_scalars('f1', {'valid': mvf}, epoch)
+def log_class_metrics(metrics: Dict, writer: SummaryWriter, epoch: int, class_count: int) -> None:
+    """
+    Calculate class-wise metrics and log metrics of most/least common metrics to Tensorboard
+
+    :param metrics: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
+                     'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
+
+    :param class_count: Log <class_count> most common and <class_count> least common classes
+    """
+
+    train_prfs_list = precision_recall_fscore_support(metrics['train']['gt_classes_stack'],
+                                                      metrics['train']['pred_classes_stack'],
+                                                      average=None)
+
+    valid_prfs_list = precision_recall_fscore_support(metrics['valid']['gt_classes_stack'],
+                                                      metrics['valid']['pred_classes_stack'],
+                                                      average=None)
+
+    most_common_classes = range(0, 3)
+    least_common_classes = range(class_count - 3, class_count)
+    log_classes = [*most_common_classes, *least_common_classes]
+
+    # c = class, tp = train precision, tr = train recall, etc.
+    for c, (tp, tr, tf, _, vp, vr, vf, _), in enumerate(zip(*train_prfs_list, *valid_prfs_list)):
+        if c not in log_classes:
+            continue
+
+        writer.add_scalars('precision', {f'train_{c}': tp}, epoch)
+        writer.add_scalars('precision', {f'valid_{c}': vp}, epoch)
+        writer.add_scalars('recall', {f'train_{c}': tr}, epoch)
+        writer.add_scalars('recall', {f'valid_{c}': vr}, epoch)
+        writer.add_scalars('f1', {f'train_{c}': tf}, epoch)
+        writer.add_scalars('f1', {f'valid_{c}': vf}, epoch)
+
+
+def log_macro_metrics(metrics: Dict, writer: SummaryWriter, epoch: int) -> None:
+    """
+    Calculate macro metrics across all classes and log them to Tensorboard
+
+    :param metrics: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
+                     'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
+    """
+
+    tp, tr, tf, _ = precision_recall_fscore_support(metrics['train']['gt_classes_stack'],
+                                                    metrics['train']['pred_classes_stack'],
+                                                    average='macro')
+
+    vp, vr, vf, _ = precision_recall_fscore_support(metrics['valid']['gt_classes_stack'],
+                                                    metrics['valid']['pred_classes_stack'],
+                                                    average='macro')
+
+    writer.add_scalars('precision', {'train': tp}, epoch)
+    writer.add_scalars('precision', {'valid': vp}, epoch)
+    writer.add_scalars('recall', {'train': tr}, epoch)
+    writer.add_scalars('recall', {'valid': vr}, epoch)
+    writer.add_scalars('f1', {'train': tf}, epoch)
+    writer.add_scalars('f1', {'valid': vf}, epoch)
 
 
 if __name__ == '__main__':
