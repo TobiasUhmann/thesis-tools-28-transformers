@@ -1,11 +1,11 @@
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
-from random import shuffle
 from typing import List, Tuple, Dict
 
+import numpy
 import torch
-from sklearn.metrics import f1_score, precision_score, recall_score, precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support
 from torch import Tensor, tensor
 from torch.nn import BCEWithLogitsLoss
 from torch.optim import Adam
@@ -133,11 +133,19 @@ def train_classifier(args):
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
 
+    ##
+
+    _, train_classes_stack, _ = zip(*train_set)
+    train_classes_stack = numpy.array(train_classes_stack)
+    train_freqs = train_classes_stack.mean(axis=0)
+
+    class_weights = tensor(1 / train_freqs).to(device)
+
     ## Train
 
     bert = bert.to(device)
 
-    criterion = BCEWithLogitsLoss()
+    criterion = BCEWithLogitsLoss(pos_weight=class_weights)
     optimizer = Adam(bert.parameters(), lr=lr)
 
     writer = SummaryWriter(log_dir=log_dir)
