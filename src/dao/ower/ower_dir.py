@@ -25,10 +25,7 @@ for debugging purposes.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
-
-from torchtext.data import TabularDataset, Field
-from torchtext.vocab import Vocab
+from typing import List
 
 from dao.base_dir import BaseDir
 from dao.ower.classes_tsv import ClassesTsv
@@ -91,52 +88,3 @@ class OwerDir(BaseDir):
         super().create()
 
         self.tmp_dir.create()
-
-    def read_datasets(self, class_count: int, sent_count: int, vectors=None) \
-            -> Tuple[List[Sample], List[Sample], List[Sample], Vocab]:
-        """
-        :param vectors: Pre-trained word embeddings
-        """
-
-        def tokenize(text: str) -> List[str]:
-            return text.split()
-
-        ent_field = Field(sequential=False, use_vocab=False)
-        ent_label_field = Field()
-        class_field = Field(sequential=False, use_vocab=False)
-        sent_field = Field(sequential=True, use_vocab=True, tokenize=tokenize, lower=True)
-
-        ent_col = ('ent', ent_field)
-        ent_label_col = ('ent_label', ent_label_field)
-        class_cols = [(f'class_{i}', class_field) for i in range(class_count)]
-        sent_cols = [(f'sent_{i}', sent_field) for i in range(sent_count)]
-
-        cols = [ent_col, ent_label_col] + class_cols + sent_cols
-
-        train_tab_set = TabularDataset(str(self.train_samples_tsv.path), 'tsv', cols, skip_header=True)
-        valid_tab_set = TabularDataset(str(self.valid_samples_tsv.path), 'tsv', cols, skip_header=True)
-        test_tab_set = TabularDataset(str(self.test_samples_tsv.path), 'tsv', cols, skip_header=True)
-
-        #
-        # Build vocab on train data
-        #
-
-        sent_field.build_vocab(train_tab_set, vectors=vectors)
-        vocab = sent_field.vocab
-
-        #
-        # Transform TabularDataset -> List[Sample]
-        #
-
-        def transform(raw_set: TabularDataset) -> List[Sample]:
-            return [Sample(
-                int(getattr(row, 'ent')),
-                [int(getattr(row, f'class_{i}')) for i in range(class_count)],
-                [[vocab[token] for token in getattr(row, f'sent_{i}')] for i in range(sent_count)]
-            ) for row in raw_set]
-
-        train_set = transform(train_tab_set)
-        valid_set = transform(valid_tab_set)
-        test_set = transform(test_tab_set)
-
-        return train_set, valid_set, test_set, vocab
