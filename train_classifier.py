@@ -8,7 +8,6 @@ import torch
 from sklearn.metrics import precision_recall_fscore_support
 from torch import Tensor, tensor
 from torch.nn import BCEWithLogitsLoss
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -56,6 +55,9 @@ def parse_args():
     parser.add_argument('--log-dir', dest='log_dir', metavar='STR', default=default_log_dir,
                         help='Tensorboard log directory (default: {})'.format(default_log_dir))
 
+    parser.add_argument('--log-steps', dest='log_steps', action='store_true',
+                        help='Log after steps, otherwise log after epochs')
+
     default_learning_rate = 0.01
     parser.add_argument('--lr', dest='lr', type=float, metavar='FLOAT', default=default_learning_rate,
                         help='Learning rate (default: {})'.format(default_learning_rate))
@@ -81,6 +83,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('--device', args.device))
     logging.info('    {:24} {}'.format('--epoch-count', args.epoch_count))
     logging.info('    {:24} {}'.format('--log-dir', args.log_dir))
+    logging.info('    {:24} {}'.format('--log-steps', args.log_steps))
     logging.info('    {:24} {}'.format('--lr', args.lr))
     logging.info('    {:24} {}'.format('--model', args.model))
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
@@ -97,6 +100,7 @@ def train_classifier(args):
     device = args.device
     epoch_count = args.epoch_count
     log_dir = args.log_dir
+    log_steps = args.log_steps
     lr = args.lr
     model = args.model
     sent_len = args.sent_len
@@ -123,7 +127,8 @@ def train_classifier(args):
         stretched_sent_batch = [sent for sents in sents_batch for sent in sents]
 
         extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
-        stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in extended_classes]
+        stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in
+                                   extended_classes]
 
         encoded_batch = tokenizer(stretched_sent_batch, padding=True, truncation=True, max_length=sent_len,
                                   return_tensors='pt')
@@ -133,7 +138,7 @@ def train_classifier(args):
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
 
-    ##
+    ## Calc class weights
 
     _, _, train_classes_stack, _ = zip(*train_set)
     train_classes_stack = numpy.array(train_classes_stack)
@@ -152,15 +157,20 @@ def train_classifier(args):
     optimizer_grouped_parameters = [
         {'params': [p for n, p in bert.named_parameters() if not any(nd in n for nd in no_decay)],
          'weight_decay': 0.01},
-        {'params': [p for n, p in bert.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        {'params': [p for n, p in bert.named_parameters() if any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0}
     ]
+
     optimizer = AdamW(optimizer_grouped_parameters, lr=1e-5)
 
     writer = SummaryWriter(log_dir=log_dir)
 
+    train_sample_idx = 0
+    valid_sample_idx = 0
+
     for epoch in range(epoch_count):
 
-        metrics = {
+        epoch_metrics = {
             'train': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []},
             'valid': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
         }
@@ -169,11 +179,8 @@ def train_classifier(args):
 
         bert.train()
 
-        for step, (ctxt_batch, gt_classes_batch) in enumerate(tqdm(train_loader)):
-            metrics = {
-                'train': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []},
-                'valid': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
-            }
+        for ctxt_batch, gt_classes_batch in tqdm(train_loader):
+            train_sample_idx += len(gt_classes_batch) / sent_count
 
             input_ids_batch = ctxt_batch.input_ids.to(device)
             attention_mask_batch = ctxt_batch.attention_mask.to(device)
@@ -186,22 +193,37 @@ def train_classifier(args):
             loss.backward()
             optimizer.step()
 
-            track_metrics(metrics['train'], loss, outputs_batch, gt_classes_batch)
-
-            ## Log loss
-
-            writer.add_scalars('loss', {'train': metrics['train']['loss']}, step)
-
             ## Log metrics
 
-            log_class_metrics(metrics, writer, step, class_count)
-            log_macro_metrics(metrics, writer, step)
+            pred_classes_batch = (outputs_batch > 0).int()
+
+            step_loss = loss.item()
+            step_pred_classes_batch = pred_classes_batch.cpu().numpy().tolist()
+            step_gt_classes_batch = gt_classes_batch.cpu().numpy().tolist()
+
+            if log_steps:
+                writer.add_scalars('loss', {'train': step_loss}, train_sample_idx)
+
+                step_metrics = {'train': {
+                    'pred_classes_stack': step_pred_classes_batch,
+                    'gt_classes_stack': step_gt_classes_batch
+                }}
+
+                log_class_metrics(step_metrics, writer, train_sample_idx, class_count)
+                log_macro_metrics(step_metrics, writer, train_sample_idx)
+
+            else:
+                epoch_metrics['train']['loss'] += step_loss
+                epoch_metrics['train']['pred_classes_stack'] += step_pred_classes_batch
+                epoch_metrics['train']['gt_classes_stack'] += step_gt_classes_batch
 
         ## Validate
 
         bert.eval()
 
         for ctxt_batch, gt_classes_batch in tqdm(valid_loader):
+            valid_sample_idx += len(gt_classes_batch) / sent_count
+
             input_ids_batch = ctxt_batch.input_ids.to(device)
             attention_mask_batch = ctxt_batch.attention_mask.to(device)
             gt_classes_batch = gt_classes_batch.to(device)
@@ -209,90 +231,93 @@ def train_classifier(args):
             outputs_batch = bert(input_ids_batch, attention_mask_batch).logits
             loss = criterion(outputs_batch, gt_classes_batch.float())
 
-            track_metrics(metrics['valid'], loss, outputs_batch, gt_classes_batch)
+            ## Log metrics
 
-        # ## Log loss
-        #
-        # train_loss = metrics['train']['loss'] / len(train_loader)
-        # valid_loss = metrics['valid']['loss'] / len(valid_loader)
-        #
-        # writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
-        #
-        # ## Log metrics
-        #
-        # log_class_metrics(metrics, writer, epoch, class_count)
-        # log_macro_metrics(metrics, writer, epoch)
+            pred_classes_batch = (outputs_batch > 0).int()
+
+            step_loss = loss.item()
+            step_pred_classes_batch = pred_classes_batch.cpu().numpy().tolist()
+            step_gt_classes_batch = gt_classes_batch.cpu().numpy().tolist()
+
+            if log_steps:
+                writer.add_scalars('loss', {'valid': step_loss}, valid_sample_idx)
+
+                step_metrics = {'valid': {
+                    'pred_classes_stack': step_pred_classes_batch,
+                    'gt_classes_stack': step_gt_classes_batch
+                }}
+
+                log_class_metrics(step_metrics, writer, valid_sample_idx, class_count)
+                log_macro_metrics(step_metrics, writer, valid_sample_idx)
+
+            else:
+                epoch_metrics['valid']['loss'] += step_loss
+                epoch_metrics['valid']['pred_classes_stack'] += step_pred_classes_batch
+                epoch_metrics['valid']['gt_classes_stack'] += step_gt_classes_batch
+
+        if not log_steps:
+            ## Log loss
+
+            train_loss = epoch_metrics['train']['loss'] / len(train_loader)
+            valid_loss = epoch_metrics['valid']['loss'] / len(valid_loader)
+
+            writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
+
+            ## Log metrics
+
+            log_class_metrics(epoch_metrics, writer, epoch, class_count)
+            log_macro_metrics(epoch_metrics, writer, epoch)
 
 
-def track_metrics(metrics: Dict, loss: Tensor, outputs_batch: Tensor, gt_classes_batch: Tensor) -> None:
-    """
-    :param metrics: {'loss': loss, 'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}
-    """
-
-    pred_classes_batch = (outputs_batch > 0).int()
-
-    metrics['loss'] += loss.item()
-    metrics['pred_classes_stack'] += pred_classes_batch.cpu().numpy().tolist()
-    metrics['gt_classes_stack'] += gt_classes_batch.cpu().numpy().tolist()
-
-
-def log_class_metrics(metrics: Dict, writer: SummaryWriter, epoch: int, class_count: int) -> None:
+def log_class_metrics(data: Dict, writer: SummaryWriter, x: int, class_count: int) -> None:
     """
     Calculate class-wise metrics and log metrics of most/least common metrics to Tensorboard
 
-    :param metrics: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
-                     'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
+    :param data: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
+                  'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
 
     :param class_count: Log <class_count> most common and <class_count> least common classes
     """
-
-    train_prfs_list = precision_recall_fscore_support(metrics['train']['gt_classes_stack'],
-                                                      metrics['train']['pred_classes_stack'],
-                                                      average=None)
-
-    valid_prfs_list = precision_recall_fscore_support(metrics['valid']['gt_classes_stack'],
-                                                      metrics['valid']['pred_classes_stack'],
-                                                      average=None)
 
     most_common_classes = range(0, 3)
     least_common_classes = range(class_count - 3, class_count)
     log_classes = [*most_common_classes, *least_common_classes]
 
-    # c = class, tp = train precision, tr = train recall, etc.
-    for c, (tp, tr, tf, _, vp, vr, vf, _), in enumerate(zip(*train_prfs_list, *valid_prfs_list)):
-        if c not in log_classes:
-            continue
+    for split, metrics in data.items():
+        prfs_list = precision_recall_fscore_support(metrics['gt_classes_stack'],
+                                                    metrics['pred_classes_stack'],
+                                                    average=None,
+                                                    zero_division=0)
 
-        writer.add_scalars('precision', {f'train_{c}': tp}, epoch)
-        writer.add_scalars('precision', {f'valid_{c}': vp}, epoch)
-        writer.add_scalars('recall', {f'train_{c}': tr}, epoch)
-        writer.add_scalars('recall', {f'valid_{c}': vr}, epoch)
-        writer.add_scalars('f1', {f'train_{c}': tf}, epoch)
-        writer.add_scalars('f1', {f'valid_{c}': vf}, epoch)
+        # c = class
+        for c, (prec, rec, f1, _), in enumerate(zip(*prfs_list)):
+            if c not in log_classes:
+                continue
+
+            writer.add_scalars('precision', {f'{split}_{c}': prec}, x)
+            writer.add_scalars('recall', {f'{split}_{c}': rec}, x)
+            writer.add_scalars('f1', {f'{split}_{c}': f1}, x)
 
 
-def log_macro_metrics(metrics: Dict, writer: SummaryWriter, epoch: int) -> None:
+def log_macro_metrics(data: Dict, writer: SummaryWriter, x: int) -> None:
     """
     Calculate macro metrics across all classes and log them to Tensorboard
 
-    :param metrics: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
-                     'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
+    :param data: {'train': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]},
+                  'valid': {'gt_classes_stack': [[gt_class]], 'pred_classes_stack': [[pred_class]]}}
+
+    :param x: Value on x-axis
     """
 
-    tp, tr, tf, _ = precision_recall_fscore_support(metrics['train']['gt_classes_stack'],
-                                                    metrics['train']['pred_classes_stack'],
-                                                    average='macro')
+    for split, metrics in data.items():
+        prec, rec, f1, _ = precision_recall_fscore_support(metrics['gt_classes_stack'],
+                                                           metrics['pred_classes_stack'],
+                                                           average='macro',
+                                                           zero_division=0)
 
-    vp, vr, vf, _ = precision_recall_fscore_support(metrics['valid']['gt_classes_stack'],
-                                                    metrics['valid']['pred_classes_stack'],
-                                                    average='macro')
-
-    writer.add_scalars('precision', {'train': tp}, epoch)
-    writer.add_scalars('precision', {'valid': vp}, epoch)
-    writer.add_scalars('recall', {'train': tr}, epoch)
-    writer.add_scalars('recall', {'valid': vr}, epoch)
-    writer.add_scalars('f1', {'train': tf}, epoch)
-    writer.add_scalars('f1', {'valid': vf}, epoch)
+        writer.add_scalars('precision', {split: prec}, x)
+        writer.add_scalars('recall', {split: rec}, x)
+        writer.add_scalars('f1', {split: f1}, x)
 
 
 if __name__ == '__main__':
