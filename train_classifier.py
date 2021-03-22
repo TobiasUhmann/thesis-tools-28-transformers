@@ -16,6 +16,8 @@ from transformers import DistilBertForSequenceClassification, DistilBertTokenize
 from dao.ower.ower_dir import OwerDir
 from dao.ower.samples_tsv import Sample
 
+import ower_bert.classifier
+
 
 def main():
     logging.basicConfig(format='%(asctime)s | %(levelname)s | %(message)s', level=logging.INFO)
@@ -62,8 +64,8 @@ def parse_args():
     parser.add_argument('--lr', dest='lr', type=float, metavar='FLOAT', default=default_learning_rate,
                         help='Learning rate (default: {})'.format(default_learning_rate))
 
-    model_choices = ['base', 'ower']
-    default_model = 'ower'
+    model_choices = ['base-bert', 'ower-bert']
+    default_model = 'ower-bert'
     parser.add_argument('--model', dest='model', choices=model_choices, default=default_model)
 
     default_sent_len = 128
@@ -112,28 +114,41 @@ def train_classifier(args):
 
     ## Create model and tokenizer
 
-    model_name = 'distilbert-base-uncased'
-    bert = DistilBertForSequenceClassification.from_pretrained(model_name, num_labels=class_count)
-    tokenizer = DistilBertTokenizer.from_pretrained(model_name)
+    if model == 'base-bert':
+        model_name = 'distilbert-base-uncased'
+        classifier = DistilBertForSequenceClassification.from_pretrained(model_name, num_labels=class_count)
+        tokenizer = DistilBertTokenizer.from_pretrained(model_name)
+
+    elif model == 'ower-bert':
+        tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+        classifier = ower_bert.classifier.Classifier(class_count, sent_count)
+
+    else:
+        raise
 
     ## Load datasets and create dataloaders
 
     train_set = ower_dir.train_samples_tsv.load(class_count, sent_count)
     valid_set = ower_dir.valid_samples_tsv.load(class_count, sent_count)
 
-    def generate_batch(batch: List[Sample]) -> Tuple[Tensor, Tensor]:
-        _, _, classes_batch, sents_batch = zip(*batch)
+    def generate_batch(batch: List[Sample]) -> Tuple[Tensor, Tensor, Tensor]:
+        _, _, classes_batch, texts_batch = zip(*batch)
 
-        stretched_sent_batch = [sent for sents in sents_batch for sent in sents]
+        flat_text_batch = [text for texts in texts_batch for text in texts]
 
-        extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
-        stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in
-                                   extended_classes]
+        # extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
+        # stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in
+        #                            extended_classes]
 
-        encoded_batch = tokenizer(stretched_sent_batch, padding=True, truncation=True, max_length=sent_len,
-                                  return_tensors='pt')
+        encoded = tokenizer(flat_text_batch, padding=True, truncation=True, max_length=sent_len, return_tensors='pt')
 
-        return encoded_batch, tensor(stretched_classes_batch)
+        flat_sent_batch = encoded.input_ids
+        flat_mask_batch = encoded.attention_mask
+
+        sents_batch = flat_sent_batch.reshape(batch_size, sent_count, -1)
+        masks_batch = flat_mask_batch.reshape(batch_size, sent_count, -1)
+
+        return sents_batch, masks_batch, tensor(classes_batch)
 
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
@@ -148,16 +163,16 @@ def train_classifier(args):
 
     ## Train
 
-    bert = bert.to(device)
+    classifier = classifier.to(device)
 
     criterion = BCEWithLogitsLoss(pos_weight=class_weights)
     # optimizer = Adam(bert.parameters(), lr=lr)
 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in bert.named_parameters() if not any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in classifier.named_parameters() if not any(nd in n for nd in no_decay)],
          'weight_decay': 0.01},
-        {'params': [p for n, p in bert.named_parameters() if any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in classifier.named_parameters() if any(nd in n for nd in no_decay)],
          'weight_decay': 0.0}
     ]
 
@@ -177,17 +192,17 @@ def train_classifier(args):
 
         ## Train
 
-        bert.train()
+        classifier.train()
 
-        for ctxt_batch, gt_classes_batch in tqdm(train_loader):
-            train_sample_idx += len(gt_classes_batch) / sent_count
+        for sents_batch, masks_batch, gt_batch in tqdm(train_loader):
+            train_sample_idx += len(gt_batch) / sent_count
 
-            input_ids_batch = ctxt_batch.input_ids.to(device)
-            attention_mask_batch = ctxt_batch.attention_mask.to(device)
-            gt_classes_batch = gt_classes_batch.to(device)
+            sents_batch = sents_batch.to(device)
+            masks_batch = masks_batch.to(device)
+            gt_batch = gt_batch.to(device)
 
-            outputs_batch = bert(input_ids_batch, attention_mask_batch).logits
-            loss = criterion(outputs_batch, gt_classes_batch.float())
+            logits_batch = classifier(sents_batch, masks_batch)
+            loss = criterion(logits_batch, gt_batch.float())
 
             optimizer.zero_grad()
             loss.backward()
@@ -195,18 +210,18 @@ def train_classifier(args):
 
             ## Log metrics
 
-            pred_classes_batch = (outputs_batch > 0).int()
+            pred_batch = (logits_batch > 0).int()
 
             step_loss = loss.item()
-            step_pred_classes_batch = pred_classes_batch.cpu().numpy().tolist()
-            step_gt_classes_batch = gt_classes_batch.cpu().numpy().tolist()
+            step_pred_batch = pred_batch.cpu().numpy().tolist()
+            step_gt_batch = gt_batch.cpu().numpy().tolist()
 
             if log_steps:
                 writer.add_scalars('loss', {'train': step_loss}, train_sample_idx)
 
                 step_metrics = {'train': {
-                    'pred_classes_stack': step_pred_classes_batch,
-                    'gt_classes_stack': step_gt_classes_batch
+                    'pred_classes_stack': step_pred_batch,
+                    'gt_classes_stack': step_gt_batch
                 }}
 
                 log_class_metrics(step_metrics, writer, train_sample_idx, class_count)
@@ -214,37 +229,37 @@ def train_classifier(args):
 
             else:
                 epoch_metrics['train']['loss'] += step_loss
-                epoch_metrics['train']['pred_classes_stack'] += step_pred_classes_batch
-                epoch_metrics['train']['gt_classes_stack'] += step_gt_classes_batch
+                epoch_metrics['train']['pred_classes_stack'] += step_pred_batch
+                epoch_metrics['train']['gt_classes_stack'] += step_gt_batch
 
         ## Validate
 
-        bert.eval()
+        classifier.eval()
 
-        for ctxt_batch, gt_classes_batch in tqdm(valid_loader):
-            valid_sample_idx += len(gt_classes_batch) / sent_count
+        for sents_batch, masks_batch, gt_batch in tqdm(valid_loader):
+            valid_sample_idx += len(gt_batch) / sent_count
 
-            input_ids_batch = ctxt_batch.input_ids.to(device)
-            attention_mask_batch = ctxt_batch.attention_mask.to(device)
-            gt_classes_batch = gt_classes_batch.to(device)
+            sents_batch = sents_batch.to(device)
+            masks_batch = masks_batch.to(device)
+            gt_batch = gt_batch.to(device)
 
-            outputs_batch = bert(input_ids_batch, attention_mask_batch).logits
-            loss = criterion(outputs_batch, gt_classes_batch.float())
+            logits_batch = classifier(sents_batch, masks_batch)
+            loss = criterion(logits_batch, gt_batch.float())
 
             ## Log metrics
 
-            pred_classes_batch = (outputs_batch > 0).int()
+            pred_batch = (logits_batch > 0).int()
 
             step_loss = loss.item()
-            step_pred_classes_batch = pred_classes_batch.cpu().numpy().tolist()
-            step_gt_classes_batch = gt_classes_batch.cpu().numpy().tolist()
+            step_pred_batch = pred_batch.cpu().numpy().tolist()
+            step_gt_batch = gt_batch.cpu().numpy().tolist()
 
             if log_steps:
                 writer.add_scalars('loss', {'valid': step_loss}, valid_sample_idx)
 
                 step_metrics = {'valid': {
-                    'pred_classes_stack': step_pred_classes_batch,
-                    'gt_classes_stack': step_gt_classes_batch
+                    'pred_classes_stack': step_pred_batch,
+                    'gt_classes_stack': step_gt_batch
                 }}
 
                 log_class_metrics(step_metrics, writer, valid_sample_idx, class_count)
@@ -252,8 +267,8 @@ def train_classifier(args):
 
             else:
                 epoch_metrics['valid']['loss'] += step_loss
-                epoch_metrics['valid']['pred_classes_stack'] += step_pred_classes_batch
-                epoch_metrics['valid']['gt_classes_stack'] += step_gt_classes_batch
+                epoch_metrics['valid']['pred_classes_stack'] += step_pred_batch
+                epoch_metrics['valid']['gt_classes_stack'] += step_gt_batch
 
         if not log_steps:
             ## Log loss
