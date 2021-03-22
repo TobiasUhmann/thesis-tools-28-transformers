@@ -22,7 +22,7 @@ def main():
 
     args = parse_args()
 
-    train_classifier(args)
+    train_base_bert(args)
 
 
 def parse_args():
@@ -86,7 +86,7 @@ def parse_args():
     return args
 
 
-def train_classifier(args):
+def train_base_bert(args):
     ower_dir_path = args.ower_dir
     class_count = args.class_count
     sent_count = args.sent_count

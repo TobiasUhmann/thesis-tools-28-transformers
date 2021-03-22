@@ -23,7 +23,7 @@ def main():
 
     args = parse_args()
 
-    train_classifier(args)
+    train_ower_bert(args)
 
 
 def parse_args():
@@ -87,7 +87,7 @@ def parse_args():
     return args
 
 
-def train_classifier(args):
+def train_ower_bert(args):
     ower_dir_path = args.ower_dir
     class_count = args.class_count
     sent_count = args.sent_count
@@ -179,7 +179,7 @@ def train_classifier(args):
         classifier.train()
 
         for sents_batch, masks_batch, gt_batch in tqdm(train_loader):
-            train_sample_idx += len(sents_batch) / sent_count
+            train_sample_idx += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
@@ -221,7 +221,7 @@ def train_classifier(args):
         classifier.eval()
 
         for sents_batch, masks_batch, gt_batch in tqdm(valid_loader):
-            valid_sample_idx += len(sents_batch) / sent_count
+            valid_sample_idx += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
