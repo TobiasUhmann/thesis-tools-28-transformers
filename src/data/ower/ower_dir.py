@@ -27,11 +27,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-from dao.base_dir import BaseDir
-from dao.ower.classes_tsv import ClassesTsv
-from dao.ower.samples_tsv import SamplesTsv
-from dao.ower.tmp.tmp_dir import TmpDir
-from dao.ryn.split.labels_txt import LabelsTxt
+from data.base_dir import BaseDir
+from data.ower.classes_tsv import ClassesTsv
+from data.ower.samples_tsv import SamplesTsv
+from data.ower.tmp.tmp_dir import TmpDir
+from data.ryn.split.labels_txt import LabelsTxt
 
 
 @dataclass

@@ -16,9 +16,9 @@ as well as the sentences describing the entities.
 
 from pathlib import Path
 
-from dao.base_dir import BaseDir
-from dao.ryn.split.split_dir import SplitDir
-from dao.ryn.text.text_dir import TextDir
+from data.base_dir import BaseDir
+from data.ryn.split.split_dir import SplitDir
+from data.ryn.text.text_dir import TextDir
 
 
 class RynDir(BaseDir):

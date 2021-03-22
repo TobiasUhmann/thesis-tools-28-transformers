@@ -19,7 +19,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Set
 
-from dao.base_file import BaseFile
+from data.base_file import BaseFile
 
 
 class SentsTxt(BaseFile):

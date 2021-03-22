@@ -7,7 +7,7 @@ import csv
 from pathlib import Path
 from typing import List, Tuple
 
-from dao.base_file import BaseFile
+from data.base_file import BaseFile
 
 
 class ClassesTsv(BaseFile):

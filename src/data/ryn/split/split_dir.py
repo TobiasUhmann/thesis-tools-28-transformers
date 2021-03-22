@@ -21,9 +21,9 @@ split into train/valid/test.
 
 from pathlib import Path
 
-from dao.base_dir import BaseDir
-from dao.ryn.split.labels_txt import LabelsTxt
-from dao.ryn.split.triples_txt import TriplesTxt
+from data.base_dir import BaseDir
+from data.ryn.split.labels_txt import LabelsTxt
+from data.ryn.split.triples_txt import TriplesTxt
 
 
 class SplitDir(BaseDir):

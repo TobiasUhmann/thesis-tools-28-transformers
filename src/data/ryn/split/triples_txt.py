@@ -21,7 +21,7 @@ The `Ryn Triples TXT` stores triples using RIDs.
 from pathlib import Path
 from typing import List, Tuple
 
-from dao.base_file import BaseFile
+from data.base_file import BaseFile
 
 
 class TriplesTxt(BaseFile):

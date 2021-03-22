@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Dict
 
-from dao.base_file import BaseFile
+from data.base_file import BaseFile
 
 
 class LabelsTxt(BaseFile):

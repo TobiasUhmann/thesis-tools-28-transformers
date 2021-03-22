@@ -16,8 +16,8 @@ The `OWER Temp Directory` keeps intermediate files for debuggin purposes.
 
 from pathlib import Path
 
-from dao.base_dir import BaseDir
-from dao.ower.tmp.triples_db import TriplesDb
+from data.base_dir import BaseDir
+from data.ower.tmp.triples_db import TriplesDb
 
 
 class TmpDir(BaseDir):

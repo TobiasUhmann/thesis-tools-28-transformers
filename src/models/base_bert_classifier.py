@@ -4,7 +4,7 @@ from torch.nn import Module
 from transformers import DistilBertForSequenceClassification
 
 
-class Classifier(Module):
+class BaseBertClassifier(Module):
 
     bert: DistilBertForSequenceClassification
 

@@ -13,10 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from transformers import DistilBertForSequenceClassification, DistilBertTokenizer, AdamW
 
-from dao.ower.ower_dir import OwerDir
-from dao.ower.samples_tsv import Sample
-
-import ower_bert.classifier
+from data.ower.ower_dir import OwerDir
+from data.ower.samples_tsv import Sample
 
 
 def main():
@@ -121,7 +119,7 @@ def train_classifier(args):
 
     elif model == 'ower-bert':
         tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
-        classifier = ower_bert.classifier.Classifier(class_count, sent_count)
+        classifier = classifier.Classifier(class_count, sent_count)
 
     else:
         raise

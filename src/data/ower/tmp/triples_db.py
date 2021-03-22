@@ -35,7 +35,7 @@ from pathlib import Path
 from sqlite3 import connect
 from typing import List, Tuple, Set
 
-from dao.base_file import BaseFile
+from data.base_file import BaseFile
 
 
 class TriplesDb(BaseFile):

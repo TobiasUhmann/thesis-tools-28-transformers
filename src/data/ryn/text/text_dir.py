@@ -16,8 +16,8 @@ The `Ryn Text Directory` contains the entities' sentences.
 
 from pathlib import Path
 
-from dao.base_dir import BaseDir
-from dao.ryn.text.sents_txt import SentsTxt
+from data.base_dir import BaseDir
+from data.ryn.text.sents_txt import SentsTxt
 
 
 class TextDir(BaseDir):
