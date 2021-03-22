@@ -11,11 +11,10 @@ from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import DistilBertTokenizer, AdamW
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizer, AdamW
 
 from data.ower.ower_dir import OwerDir
 from data.ower.samples_tsv import Sample
-from models.ower_bert import OwerBert
 
 
 def main():
@@ -107,8 +106,9 @@ def train_classifier(args):
 
     ## Create model and tokenizer
 
-    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
-    classifier = OwerBert(class_count, sent_count)
+    model_name = 'distilbert-base-uncased'
+    classifier = DistilBertForSequenceClassification.from_pretrained(model_name, num_labels=class_count)
+    tokenizer = DistilBertTokenizer.from_pretrained(model_name)
 
     ## Load datasets and create dataloaders
 
@@ -120,19 +120,16 @@ def train_classifier(args):
 
         flat_text_batch = [text for texts in texts_batch for text in texts]
 
-        # extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
-        # stretched_classes_batch = [classes for extended_classes in extended_classes_batch for classes in
-        #                            extended_classes]
+        extended_classes_batch = [[classes] * sent_count for classes in classes_batch]
+        flat_classes_batch = [classes for extended_classes in extended_classes_batch for classes in
+                                   extended_classes]
 
         encoded = tokenizer(flat_text_batch, padding=True, truncation=True, max_length=sent_len, return_tensors='pt')
 
         flat_sent_batch = encoded.input_ids
         flat_mask_batch = encoded.attention_mask
 
-        sents_batch = flat_sent_batch.reshape(len(batch), sent_count, -1)
-        masks_batch = flat_mask_batch.reshape(len(batch), sent_count, -1)
-
-        return sents_batch, masks_batch, tensor(classes_batch)
+        return flat_sent_batch, flat_mask_batch, tensor(flat_classes_batch)
 
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
@@ -185,7 +182,7 @@ def train_classifier(args):
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device)
 
-            logits_batch = classifier(sents_batch, masks_batch)
+            logits_batch = classifier(sents_batch, masks_batch).logits
             loss = criterion(logits_batch, gt_batch.float())
 
             optimizer.zero_grad()
@@ -227,7 +224,7 @@ def train_classifier(args):
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device)
 
-            logits_batch = classifier(sents_batch, masks_batch)
+            logits_batch = classifier(sents_batch, masks_batch).logits
             loss = criterion(logits_batch, gt_batch.float())
 
             ## Log metrics

@@ -4,7 +4,7 @@ from torch.nn import Module, Parameter, Softmax
 from transformers import DistilBertModel
 
 
-class Classifier(Module):
+class OwerBert(Module):
     sent_count: int
 
     bert: DistilBertModel
