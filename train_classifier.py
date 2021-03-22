@@ -145,8 +145,8 @@ def train_classifier(args):
         flat_sent_batch = encoded.input_ids
         flat_mask_batch = encoded.attention_mask
 
-        sents_batch = flat_sent_batch.reshape(batch_size, sent_count, -1)
-        masks_batch = flat_mask_batch.reshape(batch_size, sent_count, -1)
+        sents_batch = flat_sent_batch.reshape(len(batch), sent_count, -1)
+        masks_batch = flat_mask_batch.reshape(len(batch), sent_count, -1)
 
         return sents_batch, masks_batch, tensor(classes_batch)
 
@@ -195,7 +195,7 @@ def train_classifier(args):
         classifier.train()
 
         for sents_batch, masks_batch, gt_batch in tqdm(train_loader):
-            train_sample_idx += len(gt_batch) / sent_count
+            train_sample_idx += len(sents_batch) / sent_count
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
@@ -237,7 +237,7 @@ def train_classifier(args):
         classifier.eval()
 
         for sents_batch, masks_batch, gt_batch in tqdm(valid_loader):
-            valid_sample_idx += len(gt_batch) / sent_count
+            valid_sample_idx += len(sents_batch) / sent_count
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
