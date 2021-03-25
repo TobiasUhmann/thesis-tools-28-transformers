@@ -28,7 +28,7 @@ def main():
     args.sent_len = 64
 
     # Datasets with respective sentence counts and appropriate batch sizes.
-    # Start out with batch sizes that work on a GTX 1080 Ti with 11GB RAM.
+    # Start out with twice the batch size that works on a GTX 1080 Ti with 11GB RAM.
     # [[(dataset, sent count), BASE batch size, OWER batch size]]
     dataset_model_choices = [
         [('ower-v4-cde-cde-100-1', 1), 'base-bert', 256],
@@ -58,8 +58,8 @@ def main():
     # Try batches sizes. Decrease if graphics RAM is not sufficient until it fits.
     #
 
-    args.log_dir = None
-    args.save_dir = None
+    args.log_dir = 'runs/try_batch_size/'
+    args.save_dir = 'models/try_batch_size/'
     args.try_batch_size = True
 
     for dataset_model_choice in dataset_model_choices:

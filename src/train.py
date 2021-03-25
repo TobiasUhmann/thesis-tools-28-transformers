@@ -255,9 +255,6 @@ def train(args):
             loss.backward()
             optimizer.step()
 
-            if try_batch_size:
-                break
-
             #
             # Log metrics
             #
@@ -283,6 +280,9 @@ def train(args):
                 log_class_metrics(step_metrics, writer, train_progress, class_count)
                 log_macro_metrics(step_metrics, writer, train_progress)
 
+            if try_batch_size:
+                break
+
         #
         # Validate
         #
@@ -298,9 +298,6 @@ def train(args):
 
             logits_batch = classifier(sents_batch, masks_batch)
             loss = criterion(logits_batch, gt_batch)
-
-            if try_batch_size:
-                break
 
             #
             # Log metrics
@@ -327,8 +324,8 @@ def train(args):
                 log_class_metrics(step_metrics, writer, valid_progress, class_count)
                 log_macro_metrics(step_metrics, writer, valid_progress)
 
-        if try_batch_size:
-            break
+            if try_batch_size:
+                break
 
         #
         # Log loss
@@ -353,6 +350,9 @@ def train(args):
         if (save_dir is not None) and (valid_f1 > best_valid_f1):
             best_valid_f1 = valid_f1
             torch.save(classifier.state_dict(), f'{save_dir}/model.pt')
+
+        if try_batch_size:
+            break
 
 
 def log_class_metrics(data: Dict, writer: SummaryWriter, x: int, class_count: int) -> None:
