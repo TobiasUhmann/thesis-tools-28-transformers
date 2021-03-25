@@ -40,10 +40,12 @@ class LabelsTxt(BaseFile):
         # Parse declared entity count from doc header
         declared_ent_count = int(lines[0])
 
-        ## Parse doc body
-        ##
-        ## Each line should specify the entity followed by its RID
-        ## Example: 'Ent label with spaces 123'
+        #
+        # Parse doc body
+        #
+        # Each line should specify the entity followed by its RID
+        # Example: 'Ent label with spaces 123'
+        #
 
         rid_to_label: Dict[int, str] = {}
 

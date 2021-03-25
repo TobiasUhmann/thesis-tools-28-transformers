@@ -41,10 +41,12 @@ class TriplesTxt(BaseFile):
         # Parse declared triple count from doc header
         declared_triple_count = int(lines[0])
 
-        ## Parse doc body
-        ##
-        ## Each line should consist of three whitespace separated
-        ## head RID, tail RID and rel RID
+        #
+        # Parse doc body
+        #
+        # Each line should consist of three whitespace separated
+        # head RID, tail RID and rel RID
+        #
 
         triples = []
 

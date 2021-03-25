@@ -85,7 +85,9 @@ def parse_args():
 
     args = parser.parse_args()
 
-    ## Log applied config
+    #
+    # Log applied config
+    #
 
     logging.info('Applied config:')
     logging.info('    {:24} {}'.format('ower-dir', args.ower_dir))
@@ -121,17 +123,23 @@ def train(args):
     sent_len = args.sent_len
     try_batch_size = args.try_batch_size
 
-    ## Check that (input) OWER Directory exists
+    #
+    # Check that (input) OWER Directory exists
+    #
 
     ower_dir = OwerDir(Path(ower_dir_path))
     ower_dir.check()
 
-    ## Create (output) save dir if it does not exist already
+    #
+    # Create (output) save dir if it does not exist already
+    #
 
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
 
-    ## Create model and tokenizer
+    #
+    # Create model and tokenizer
+    #
 
     if model_name == 'base-bert':
         pre_trained = 'distilbert-base-uncased'
@@ -146,7 +154,9 @@ def train(args):
     else:
         raise
 
-    ## Load datasets and create dataloaders
+    #
+    # Load datasets and create dataloaders
+    #
 
     train_set = ower_dir.train_samples_tsv.load(class_count, sent_count)
     valid_set = ower_dir.valid_samples_tsv.load(class_count, sent_count)
@@ -179,14 +189,18 @@ def train(args):
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
 
-    ## Calc class weights
+    #
+    # Calc class weights
+    #
 
     _, _, train_classes_stack, _ = zip(*train_set)
     train_freqs = np.array(train_classes_stack).mean(axis=0)
 
     class_weights = tensor(1 / train_freqs)
 
-    ## Train
+    #
+    # Prepare training
+    #
 
     classifier = classifier.to(device)
 
@@ -204,7 +218,9 @@ def train(args):
 
     writer = SummaryWriter(log_dir=log_dir)
 
-    ## Train and validate
+    #
+    # Training
+    #
 
     best_valid_f1 = 0
 
@@ -219,7 +235,9 @@ def train(args):
             'valid': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
         }
 
-        ## Train
+        #
+        # Train
+        #
 
         classifier.train()
 
@@ -240,7 +258,9 @@ def train(args):
             if try_batch_size:
                 break
 
-            ## Log metrics
+            #
+            # Log metrics
+            #
 
             pred_batch = (logits_batch > 0).int()
 
@@ -263,7 +283,9 @@ def train(args):
                 log_class_metrics(step_metrics, writer, train_progress, class_count)
                 log_macro_metrics(step_metrics, writer, train_progress)
 
-        ## Validate
+        #
+        # Validate
+        #
 
         classifier.eval()
 
@@ -280,7 +302,9 @@ def train(args):
             if try_batch_size:
                 break
 
-            ## Log metrics
+            #
+            # Log metrics
+            #
 
             pred_batch = (logits_batch > 0).int()
 
@@ -306,19 +330,25 @@ def train(args):
         if try_batch_size:
             break
 
-        ## Log loss
+        #
+        # Log loss
+        #
 
         train_loss = epoch_metrics['train']['loss'] / len(train_loader)
         valid_loss = epoch_metrics['valid']['loss'] / len(valid_loader)
 
         writer.add_scalars('loss', {'train': train_loss, 'valid': valid_loss}, epoch)
 
-        ## Log metrics
+        #
+        # Log metrics
+        #
 
         log_class_metrics(epoch_metrics, writer, epoch, class_count)
         valid_f1 = log_macro_metrics(epoch_metrics, writer, epoch)
 
-        ## Store model
+        #
+        # Store model
+        #
 
         if (save_dir is not None) and (valid_f1 > best_valid_f1):
             best_valid_f1 = valid_f1

@@ -8,7 +8,9 @@ from train import train
 def main():
     logging.basicConfig(format='%(asctime)s | %(levelname)s | %(message)s', level=logging.INFO)
 
-    ## Specify config
+    #
+    # Specify config
+    #
 
     args = Namespace()
 
@@ -22,7 +24,7 @@ def main():
     # args.log_dir
     args.log_steps = True
     args.lr = 1e-5
-    args.save_dir = None
+    # args.save_dir
     args.sent_len = 64
 
     # Datasets with respective sentence counts and appropriate batch sizes.
@@ -52,17 +54,21 @@ def main():
         [('ower-v4-fb-owe-100-1', 1), 'ower-bert', 512]
     ]
 
-    ## Try batches sizes. Decrease if graphics RAM is not sufficient until it fits.
+    #
+    # Try batches sizes. Decrease if graphics RAM is not sufficient until it fits.
+    #
+
+    args.log_dir = None
+    args.save_dir = None
+    args.try_batch_size = True
 
     for dataset_model_choice in dataset_model_choices:
         (dataset, sent_count), model, batch_size = dataset_model_choice
 
-        args.ower_dir = f'data/ower/{dataset}'
+        args.ower_dir = f'data/ower/{dataset}/'
         args.sent_count = sent_count
 
-        args.log_dir = None
         args.model = model
-        args.try_batch_size = True
 
         while True:
             args.batch_size = batch_size
@@ -81,23 +87,28 @@ def main():
                 batch_size //= 2
                 dataset_model_choice[-1] = batch_size
 
-    ## Log determined batch sizes
+    #
+    # Log determined batch sizes
+    #
 
     logging.info(f'dataset_model_choices =\n'
                  f'{pformat(dataset_model_choices)}')
 
-    ## Perform grid search
+    #
+    # Perform grid search
+    #
 
     args.try_batch_size = False
 
     for i in range(3):
         for (dataset, sent_count), model, batch_size in dataset_model_choices:
-            args.ower_dir = f'data/ower/{dataset}'
+            args.ower_dir = f'data/ower/{dataset}/'
             args.sent_count = sent_count
 
             args.batch_size = batch_size
-            args.log_dir = f'runs/datasets_{model}_{dataset}_{i}'
+            args.log_dir = f'runs/datasets_{model}_{dataset}_{i}/'
             args.model = model
+            args.save_dir = f'models/datasets_{model}_{dataset}_{i}/'
 
             train(args)
 

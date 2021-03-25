@@ -39,10 +39,12 @@ class SentsTxt(BaseFile):
         # Assert that first line is doc header
         assert lines[0].startswith('#')
 
-        ## Parse doc body
-        ##
-        ## Each line should have the format
-        ## entity RID | entity label | sentence
+        #
+        # Parse doc body
+        #
+        # Each line should have the format
+        # entity RID | entity label | sentence
+        #
 
         ent_to_sents: Dict[int, Set[str]] = defaultdict(set)
 
