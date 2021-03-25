@@ -5,7 +5,6 @@ from transformers import DistilBertForSequenceClassification
 
 
 class BaseBert(Module):
-
     bert: DistilBertForSequenceClassification
 
     def __init__(self, class_count: int):

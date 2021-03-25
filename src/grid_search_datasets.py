@@ -2,7 +2,7 @@ import logging
 
 from train_base_bert import train_base_bert
 from train_ower_bert import train_ower_bert
-from util import get_default_args
+from util.util import get_default_args
 
 
 def main():
