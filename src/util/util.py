@@ -49,6 +49,9 @@ def parse_args():
                         help='Sentence length short sentences are padded and long sentences cropped to'
                              ' (default: {})'.format(default_sent_len))
 
+    parser.add_argument('--try-batch-size', dest='try_batch_size', action='store_true',
+                        help='Try to perform a single train and valid loop to see whether the batch_size is ok')
+
     args = parser.parse_args()
 
     ## Log applied config
@@ -64,6 +67,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('--log-steps', args.log_steps))
     logging.info('    {:24} {}'.format('--lr', args.lr))
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
+    logging.info('    {:24} {}'.format('--try-batch-size', args.try_batch_size))
 
     return args
 
@@ -86,7 +90,7 @@ def get_default_args():
     args.lr = 1e-5
 
     # Logging
-    args.logdir = None
+    args.log_dir = None
     args.log_steps = True
 
     return args
