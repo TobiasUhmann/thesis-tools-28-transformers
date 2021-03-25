@@ -12,12 +12,11 @@ class OwerBert(Module):
     multi_weight: Parameter
     multi_bias: Parameter
 
-    def __init__(self, class_count: int, sent_count: int):
+    def __init__(self, pre_trained: str, class_count: int, sent_count: int):
         super().__init__()
 
         self.sent_count = sent_count
 
-        pre_trained = 'distilbert-base-uncased'
         self.bert = DistilBertModel.from_pretrained(pre_trained)
 
         emb_size = self.bert.config.dim

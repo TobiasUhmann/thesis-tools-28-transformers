@@ -1,4 +1,3 @@
-import torch
 from torch import Tensor
 from torch.nn import Module
 from transformers import DistilBertForSequenceClassification
@@ -7,32 +6,45 @@ from transformers import DistilBertForSequenceClassification
 class BaseBert(Module):
     bert: DistilBertForSequenceClassification
 
-    def __init__(self, class_count: int):
+    def __init__(self, pre_trained: str, class_count: int):
         super().__init__()
 
-        self.bert = DistilBertForSequenceClassification.from_pretrained(
-            'distilbert-base-uncased', num_labels=class_count)
+        self.bert = DistilBertForSequenceClassification.from_pretrained(pre_trained, num_labels=class_count)
 
-    def forward(self, tok_lists_batch: Tensor) -> Tensor:
+    def forward(self, tok_lists_batch: Tensor, masks_batch: Tensor) -> Tensor:
         """
-        :param tok_lists_batch: (batch_size, sent_count, sent_len)
-        :return: (batch_size, class_count)
+        :param    tok_lists_batch:  IntTensor[batch_size, sent_count, sent_len]
+        :param    masks_batch:      IntTensor[batch_size, sent_count, sent_len]
+        :return:  logits_batch:     FloatTensor[batch_size, class_count]
         """
 
-        # Average entity's sentences to a single context
+        # Flatten sentences and masks for BERT
         #
-        # < tok_lists_batch  (batch_size, sent_count, sent_len)
-        # > ctxt_batch       (batch_size, sent_len)
+        # < tok_lists_batch:       IntTensor[batch_size, sent_count, sent_len]
+        # < masks_batch:           IntTensor[batch_size, sent_count, sent_len]
+        # > flat_tok_lists_batch:  IntTensor[batch_size * sent_count, sent_len]
+        # > flat_masks_batch:      IntTensor[batch_size * sent_count, sent_len]
 
-        batch_size, _, sent_len = tok_lists_batch.shape
+        batch_size, sent_count, sent_len = tok_lists_batch.shape
 
-        ctxt_batch = torch.randint(1000, (batch_size, sent_len)).cuda()
+        flat_tok_lists_batch = tok_lists_batch.reshape(batch_size * sent_count, sent_len)
+        flat_masks_batch = masks_batch.reshape(batch_size * sent_count, sent_len)
 
-        # Push context through BERT
+        # Embed and classify sentences
         #
-        # < ctxt_batch    (batch_size, emb_size)
-        # > logits_batch  (batch_size, class_count)
+        # < flat_tok_lists_batch:  IntTensor[batch_size * sent_count, sent_len]
+        # < flat_masks_batch:      IntTensor[batch_size * sent_count, sent_len]
+        # > flat_logits_batch:     FloatTensor[batch_size * sent_count, class_count]
 
-        logits_batch = self.bert(ctxt_batch).logits
+        flat_logits_batch = self.bert(input_ids=flat_tok_lists_batch, attention_mask=flat_masks_batch).logits
+
+        # Aggregate logits of same entity
+        #
+        # < flat_logits_batch:  FloatTensor[batch_size * sent_count, class_count]
+        # > logits_batch:       FloatTensor[batch_size, class_count]
+
+        _, class_count = flat_logits_batch.shape
+
+        logits_batch = flat_logits_batch.reshape(batch_size, sent_count, class_count).mean(dim=1)
 
         return logits_batch
