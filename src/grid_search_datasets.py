@@ -39,7 +39,7 @@ def main():
         [('ower-v4-fb-irt-100-1', 1), 'base-bert', 256],
         [('ower-v4-fb-irt-100-5', 5), 'base-bert', 64],
         [('ower-v4-fb-irt-100-15', 15), 'base-bert', 16],
-        [('ower-v4-fb-irt-100-30', 30), 'base-bert', 16],
+        [('ower-v4-fb-irt-100-30', 30), 'base-bert', 8],
         [('ower-v4-fb-owe-100-1', 1), 'base-bert', 512],
 
         [('ower-v4-cde-cde-100-1', 1), 'ower-bert', 256],
@@ -50,7 +50,7 @@ def main():
         [('ower-v4-fb-irt-100-1', 1), 'ower-bert', 256],
         [('ower-v4-fb-irt-100-5', 5), 'ower-bert', 64],
         [('ower-v4-fb-irt-100-15', 15), 'ower-bert', 16],
-        [('ower-v4-fb-irt-100-30', 30), 'ower-bert', 16],
+        [('ower-v4-fb-irt-100-30', 30), 'ower-bert', 8],
         [('ower-v4-fb-owe-100-1', 1), 'ower-bert', 512]
     ]
 
@@ -74,15 +74,19 @@ def main():
             args.batch_size = batch_size
 
             try:
-                logging.info(f'Try batch size {batch_size} for dataset {dataset} and model OWER-BERT.')
+                logging.info(f'Try batch size {batch_size} for dataset {dataset} and model {model}.')
                 train(args)
 
-                logging.info(f'Works. Use batch size {batch_size} for dataset {dataset} and model OWER-BERT.')
+                # Halve once more, just to be safe
+                batch_size //= 2
+                dataset_model_choice[-1] = batch_size
+
+                logging.info(f'Works. Use batch size {batch_size} for dataset {dataset} and model {model}.')
                 break
 
             except RuntimeError:
-                logging.warning(f'Batch size {batch_size} too large for dataset {dataset} and model OWER-BERT.'
-                                f' Half batch size to {batch_size // 2}.')
+                logging.warning(f'Batch size {batch_size} too large for dataset {dataset} and model {model}.'
+                                f' Halve batch size to {batch_size // 2}.')
 
                 batch_size //= 2
                 dataset_model_choice[-1] = batch_size
