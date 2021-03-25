@@ -2,4 +2,4 @@
 
 PYTHONPATH=src/ \
 nohup python src/grid_search_datasets.py \
-> log/grid_search_datasets_$(date +'%Y-%m-%d_%H-%M-%S').stdout &
+> logs/grid_search_datasets_$(date +'%Y-%m-%d_%H-%M-%S').stdout &
