@@ -1,4 +1,5 @@
 import logging
+from pprint import pformat
 
 from train_base_bert import train_base_bert
 from train_ower_bert import train_ower_bert
@@ -10,18 +11,23 @@ def main():
 
     args = get_default_args()
 
+    # Datasets with respective sentence counts and appropriate batch sizes.
+    # Start out with batch sizes that work on a GTX 1080 Ti with 11GB RAM.
+    # [[dataset, sent count, batch size]]
     dataset_choices = [
-        ['ower-v4-cde-cde-100-1', 1, 1024],
-        ['ower-v4-cde-irt-100-1', 1, 1024],
-        ['ower-v4-cde-irt-100-5', 5, 1024],
-        ['ower-v4-cde-irt-100-15', 15, 1024],
-        ['ower-v4-cde-irt-100-30', 20, 1024],
-        ['ower-v4-fb-irt-100-1', 1, 1024],
-        ['ower-v4-fb-irt-100-5', 5, 1024],
-        ['ower-v4-fb-irt-100-15', 15, 1024],
-        ['ower-v4-fb-irt-100-30', 30, 1024],
-        ['ower-v4-fb-owe-100-1', 1, 1024]
+        ['ower-v4-cde-cde-100-1', 1, 256],
+        ['ower-v4-cde-irt-100-1', 1, 256],
+        ['ower-v4-cde-irt-100-5', 5, 64],
+        ['ower-v4-cde-irt-100-15', 15, 16],
+        ['ower-v4-cde-irt-100-30', 30, 16],
+        ['ower-v4-fb-irt-100-1', 1, 256],
+        ['ower-v4-fb-irt-100-5', 5, 64],
+        ['ower-v4-fb-irt-100-15', 15, 16],
+        ['ower-v4-fb-irt-100-30', 30, 16],
+        ['ower-v4-fb-owe-100-1', 1, 512]
     ]
+
+    # Try batches sizes. Decrease if graphics RAM is not sufficient until it fits.
 
     for dataset_choice in dataset_choices:
         dataset, sent_count, batch_size = dataset_choice
@@ -35,18 +41,20 @@ def main():
             args.batch_size = batch_size
 
             try:
-                logging.info(f'Try batch size {batch_size} for dataset {dataset}')
+                logging.info(f'Try batch size {batch_size} for dataset {dataset}.')
                 train_base_bert(args)
 
-                logging.info(f'Works. Use batch size {batch_size} for dataset {dataset}')
+                logging.info(f'Works. Use batch size {batch_size} for dataset {dataset}.')
                 break
 
             except RuntimeError:
-                logging.warning('Batch too large')
+                logging.warning(f'Batch size {batch_size} too large for dataset {dataset}.'
+                                f' Half batch size to {batch_size // 2}.')
+
                 batch_size //= 2
                 dataset_choice[2] = batch_size
 
-    print(dataset_choices)
+    logging.info(f'\n{pformat(dataset_choices)}')
 
     # for i in range(3):
     #
