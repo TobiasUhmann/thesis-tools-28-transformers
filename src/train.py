@@ -241,7 +241,7 @@ def train(args):
 
         classifier.train()
 
-        for _, sents_batch, masks_batch, gt_batch in tqdm(train_loader):
+        for _, sents_batch, masks_batch, gt_batch in tqdm(train_loader, desc=f'Epoch {epoch}'):
             train_progress += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
@@ -289,7 +289,7 @@ def train(args):
 
         classifier.eval()
 
-        for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader):
+        for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader, desc=f'Epoch {epoch}'):
             valid_progress += len(sents_batch)
 
             sents_batch = sents_batch.to(device)

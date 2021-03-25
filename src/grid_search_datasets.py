@@ -22,7 +22,7 @@ def main():
     args.device = 'cuda'
     args.epoch_count = 20
     # args.log_dir
-    args.log_steps = True
+    args.log_steps = False
     args.lr = 1e-5
     # args.save_dir
     args.sent_len = 64
@@ -114,6 +114,7 @@ def main():
             args.model = model
             args.save_dir = f'models/datasets_{model}_{dataset}_{i}/'
 
+            logging.info(f'Training model {model} on dataset {dataset}')
             train(args)
 
 
