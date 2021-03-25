@@ -49,6 +49,7 @@ def main():
         args.ower_dir = f'data/ower/{dataset}'
         args.sent_count = sent_count
 
+        args.log_dir = None
         args.try_batch_size = True
 
         while True:

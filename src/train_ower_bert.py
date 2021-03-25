@@ -36,6 +36,7 @@ def train_ower_bert(args):
     log_steps = args.log_steps
     lr = args.lr
     sent_len = args.sent_len
+    try_batch_size = args.try_batch_size
 
     ## Check that (input) OWER Directory exists
 
@@ -129,6 +130,9 @@ def train_ower_bert(args):
             loss.backward()
             optimizer.step()
 
+            if try_batch_size:
+                break
+
             ## Log metrics
 
             pred_batch = (logits_batch > 0).int()
@@ -167,6 +171,9 @@ def train_ower_bert(args):
             logits_batch = classifier(sents_batch, masks_batch)
             loss = criterion(logits_batch, gt_batch.float())
 
+            if try_batch_size:
+                break
+
             ## Log metrics
 
             pred_batch = (logits_batch > 0).int()
@@ -190,6 +197,9 @@ def train_ower_bert(args):
                 epoch_metrics['valid']['loss'] += step_loss
                 epoch_metrics['valid']['pred_classes_stack'] += step_pred_batch
                 epoch_metrics['valid']['gt_classes_stack'] += step_gt_batch
+
+        if try_batch_size:
+            break
 
         if not log_steps:
             ## Log loss
