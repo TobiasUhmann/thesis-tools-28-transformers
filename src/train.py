@@ -145,11 +145,13 @@ def train(args):
     marker_tokens = ['[MENTION_START]', '[MENTION_END]']
 
     if model_name == 'base-bert':
-        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained, additional_special_tokens=marker_tokens)
+        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
+        tokenizer.add_tokens(marker_tokens, special_tokens=True)
         classifier = BaseBert(pre_trained, class_count)
 
     elif model_name == 'ower-bert':
-        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained, additional_special_tokens=marker_tokens)
+        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
+        tokenizer.add_tokens(marker_tokens, special_tokens=True)
         classifier = OwerBert(pre_trained, class_count, sent_count)
 
     else:
