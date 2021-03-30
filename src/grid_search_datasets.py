@@ -31,6 +31,7 @@ def main():
     # Start out with twice the batch size that works on a GTX 1080 Ti with 11GB RAM.
     # [[(dataset, sent count), BASE batch size, OWER batch size]]
     dataset_model_choices = [
+        # Clean, BASE
         [('ower-v4-cde-cde-100-1', 1), 'base-bert', 256],
         [('ower-v4-cde-irt-100-1', 1), 'base-bert', 256],
         [('ower-v4-cde-irt-100-5', 5), 'base-bert', 64],
@@ -42,6 +43,7 @@ def main():
         [('ower-v4-fb-irt-100-30', 30), 'base-bert', 8],
         [('ower-v4-fb-owe-100-1', 1), 'base-bert', 512],
 
+        # Clean, OWER
         [('ower-v4-cde-cde-100-1', 1), 'ower-bert', 256],
         [('ower-v4-cde-irt-100-1', 1), 'ower-bert', 256],
         [('ower-v4-cde-irt-100-5', 5), 'ower-bert', 64],
@@ -51,7 +53,27 @@ def main():
         [('ower-v4-fb-irt-100-5', 5), 'ower-bert', 64],
         [('ower-v4-fb-irt-100-15', 15), 'ower-bert', 16],
         [('ower-v4-fb-irt-100-30', 30), 'ower-bert', 8],
-        [('ower-v4-fb-owe-100-1', 1), 'ower-bert', 512]
+        [('ower-v4-fb-owe-100-1', 1), 'ower-bert', 512],
+
+        # Marked, BASE
+        [('ower-v4-cde-irt-100-1-marked', 1), 'base-bert', 256],
+        [('ower-v4-cde-irt-100-5-marked', 5), 'base-bert', 64],
+        [('ower-v4-cde-irt-100-15-marked', 15), 'base-bert', 16],
+        [('ower-v4-cde-irt-100-30-marked', 30), 'base-bert', 16],
+        [('ower-v4-fb-irt-100-1-marked', 1), 'base-bert', 256],
+        [('ower-v4-fb-irt-100-5-marked', 5), 'base-bert', 64],
+        [('ower-v4-fb-irt-100-15-marked', 15), 'base-bert', 16],
+        [('ower-v4-fb-irt-100-30-marked', 30), 'base-bert', 8],
+
+        # Marked, OWER
+        [('ower-v4-cde-irt-100-1-marked', 1), 'ower-bert', 256],
+        [('ower-v4-cde-irt-100-5-marked', 5), 'ower-bert', 64],
+        [('ower-v4-cde-irt-100-15-marked', 15), 'ower-bert', 16],
+        [('ower-v4-cde-irt-100-30-marked', 30), 'ower-bert', 16],
+        [('ower-v4-fb-irt-100-1-marked', 1), 'ower-bert', 256],
+        [('ower-v4-fb-irt-100-5-marked', 5), 'ower-bert', 64],
+        [('ower-v4-fb-irt-100-15-marked', 15), 'ower-bert', 16],
+        [('ower-v4-fb-irt-100-30-marked', 30), 'ower-bert', 8],
     ]
 
     #
