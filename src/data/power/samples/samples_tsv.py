@@ -1,6 +1,6 @@
 """
-The `OWER Samples TSV` contains the input data for training the
-`OWER Classifier`.
+The `POWER Samples TSV` contains the input data for training the
+`POWER Classifier`.
 
 * Tabular separated
 * 1 Header Row
@@ -41,16 +41,6 @@ class SamplesTsv(BaseFile):
 
     def __init__(self, path: Path):
         super().__init__(path)
-
-    def save(self, ent_lbl_classes_sents_list: List[Tuple[int, str, List[int], List[str]]]) -> None:
-        """
-        :param ent_lbl_classes_sents_list: [(ent, label, [has class], [sent]]
-        """
-
-        with open(self.path, 'w', encoding='utf-8') as f:
-            for ent, label, classes, sents in ent_lbl_classes_sents_list:
-                f.write('{:6}\t{:40}\t{}\t  {}\n'.format(
-                    ent, label, '\t'.join((str(c) for c in classes)), '\t    '.join(sents)))
 
     def load(self, class_count: int, sent_count: int) -> List[Sample]:
         samples = []

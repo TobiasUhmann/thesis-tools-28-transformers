@@ -1,30 +1,63 @@
+from typing import List, Tuple
+
 import torch
 from torch import Tensor
-from torch.nn import Module, Parameter, Softmax
-from transformers import DistilBertModel
+from torch.nn import Parameter, Softmax, Module, Sigmoid
+from transformers import DistilBertModel, DistilBertTokenizer
+
+from models.ent import Ent
+from models.fact import Fact
+from models.pred import Pred
+from models.rel import Rel
 
 
-class OwerBert(Module):
-    sent_count: int
-
+class Texter(Module):
+    tokenizer: DistilBertTokenizer
     bert: DistilBertModel
+
     class_embs: Parameter
     multi_weight: Parameter
     multi_bias: Parameter
 
-    def __init__(self, pre_trained: str, class_count: int, sent_count: int):
+    classes: List[Tuple[Rel, Ent]]
+
+    def __init__(self, pre_trained: str, classes: List[Tuple[Rel, Ent]]):
         super().__init__()
 
-        self.sent_count = sent_count
+        self.tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
+        self.tokenizer.add_tokens(['[MENTION_START]', '[MENTION_END]', '[MASK]'], special_tokens=True)
 
         self.bert = DistilBertModel.from_pretrained(pre_trained)
 
+        class_count = len(classes)
         emb_size = self.bert.config.dim
+
         self.class_embs = Parameter(torch.randn(class_count, emb_size))
         self.multi_weight = Parameter(torch.randn(class_count, emb_size))
         self.multi_bias = Parameter(torch.randn(class_count))
 
-    def forward(self, toks_batch: Tensor, masks_batch: Tensor) -> Tensor:
+        self.classes = classes
+
+    def predict(self, ent: Ent, sents: List[str]) -> List[Pred]:
+        encoded = self.tokenizer(sents, padding=True, truncation=True, max_length=64, return_tensors='pt')
+
+        self.train()
+
+        logits_batch, softs_batch, = self.forward(encoded.input_ids.unsqueeze(0), encoded.attention_mask.unsqueeze(0))
+        logits = logits_batch[0]
+        probs = Sigmoid()(logits).detach().numpy()
+        softs = softs_batch[0].detach().numpy()
+
+        pred = {Fact(ent, rel, tail): (probs[c].item(), [(sents[i], softs[c][i].item()) for i in range(len(sents))])
+                for c, (rel, tail) in enumerate(self.classes) if probs[c] > 0.5}
+
+        preds = [Pred(fact, conf, sents, []) for fact, (conf, sents) in pred.items()]
+
+        preds.sort(key=lambda pred: pred.conf, reverse=True)
+
+        return preds
+
+    def forward(self, toks_batch: Tensor, masks_batch: Tensor) -> Tuple[Tensor, Tensor]:
         """
         :param toks_batch: (batch_size, sent_count, sent_len)
         :param masks_batch: (batch_size, sent_count, sent_len)
@@ -48,7 +81,7 @@ class OwerBert(Module):
         # < flat_tok_batch   (batch_size * sent_count, sent_len)
         # < flat_mask_batch  (batch_size * sent_count, sent_len)
 
-        flat_sent_batch = self.bert(input_ids=flat_tok_batch, attention_mask=flat_mask_batch)\
+        flat_sent_batch = self.bert(input_ids=flat_tok_batch, attention_mask=flat_mask_batch) \
             .last_hidden_state.mean(dim=1)
 
         # Restore batch shape
@@ -95,4 +128,4 @@ class OwerBert(Module):
 
         logits_batch = torch.einsum('bce, ce -> bc', mixes_batch, self.multi_weight) + self.multi_bias
 
-        return logits_batch
+        return logits_batch, softs_batch

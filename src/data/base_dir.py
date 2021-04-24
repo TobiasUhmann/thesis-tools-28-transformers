@@ -15,9 +15,9 @@ class BaseDir:
         if not isdir(self.path):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
-    def create(self) -> None:
+    def create(self, overwrite=False) -> None:
         """
         Create directory if it does not exist already.
         """
 
-        makedirs(self.path, exist_ok=True)
+        makedirs(self.path, exist_ok=overwrite)

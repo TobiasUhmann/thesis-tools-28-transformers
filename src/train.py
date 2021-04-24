@@ -1,5 +1,5 @@
 import logging
-import os
+import random
 from argparse import ArgumentParser
 from pathlib import Path
 from random import shuffle
@@ -13,12 +13,15 @@ from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import DistilBertTokenizer, AdamW
+from transformers import AdamW
 
-from data.ower.ower_dir import OwerDir
-from data.ower.samples_tsv import Sample
-from models.base_bert import BaseBert
-from models.ower_bert import OwerBert
+from data.power.samples.samples_dir import SamplesDir
+from data.power.samples.samples_tsv import Sample
+from data.power.split.split_dir import SplitDir
+from data.power.texter_pkl import TexterPkl
+from models.ent import Ent
+from models.rel import Rel
+from power.texter import Texter
 
 
 def main():
@@ -26,20 +29,31 @@ def main():
 
     args = parse_args()
 
+    if args.random_seed:
+        random.seed(args.random_seed)
+
     train(args)
+
+    logging.info('Finished successfully')
 
 
 def parse_args():
     parser = ArgumentParser()
 
-    parser.add_argument('ower_dir', metavar='ower-dir',
-                        help='Path to (input) OWER Directory')
+    parser.add_argument('samples_dir', metavar='samples-dir',
+                        help='Path to (input) POWER Samples Directory')
 
     parser.add_argument('class_count', metavar='class-count', type=int,
                         help='Number of classes distinguished by the classifier')
 
     parser.add_argument('sent_count', metavar='sent-count', type=int,
                         help='Number of sentences per entity')
+
+    parser.add_argument('split_dir', metavar='split-dir',
+                        help='Path to (input) POWER Split Directory')
+
+    parser.add_argument('texter_pkl', metavar='texter-pkl',
+                        help='Path to (output) POWER Texter PKL')
 
     device_choices = ['cpu', 'cuda']
     default_device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -66,14 +80,11 @@ def parse_args():
     parser.add_argument('--lr', dest='lr', type=float, metavar='FLOAT', default=default_learning_rate,
                         help='Learning rate (default: {})'.format(default_learning_rate))
 
-    model_choices = ['base-bert', 'ower-bert']
-    default_model_choice = 'ower-bert'
-    parser.add_argument('--model', dest='model', choices=model_choices, default=default_model_choice,
-                        help='Classifier to be trained (default: {})'.format(default_model_choice))
+    parser.add_argument('--overwrite', dest='overwrite', action='store_true',
+                        help='Overwrite output files if they already exist')
 
-    default_save_dir = None
-    parser.add_argument('--save-dir', dest='save_dir', metavar='STR', default=default_save_dir,
-                        help='Model save directory (default: {})'.format(default_save_dir))
+    parser.add_argument('--random-seed', dest='random_seed', metavar='STR',
+                        help='Use together with PYTHONHASHSEED for reproducibility')
 
     default_sent_len = 64
     parser.add_argument('--sent-len', dest='sent_len', type=int, metavar='INT', default=default_sent_len,
@@ -90,17 +101,19 @@ def parse_args():
     #
 
     logging.info('Applied config:')
-    logging.info('    {:24} {}'.format('ower-dir', args.ower_dir))
+    logging.info('    {:24} {}'.format('samples-dir', args.samples_dir))
     logging.info('    {:24} {}'.format('class-count', args.class_count))
     logging.info('    {:24} {}'.format('sent-count', args.sent_count))
+    logging.info('    {:24} {}'.format('split-dir', args.split_dir))
+    logging.info('    {:24} {}'.format('texter-pkl', args.texter_pkl))
     logging.info('    {:24} {}'.format('--batch-size', args.batch_size))
     logging.info('    {:24} {}'.format('--device', args.device))
     logging.info('    {:24} {}'.format('--epoch-count', args.epoch_count))
     logging.info('    {:24} {}'.format('--log-dir', args.log_dir))
     logging.info('    {:24} {}'.format('--log-steps', args.log_steps))
     logging.info('    {:24} {}'.format('--lr', args.lr))
-    logging.info('    {:24} {}'.format('--model', args.model))
-    logging.info('    {:24} {}'.format('--save-dir', args.save_dir))
+    logging.info('    {:24} {}'.format('--overwrite', args.overwrite))
+    logging.info('    {:24} {}'.format('--random-seed', args.random_seed))
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
     logging.info('    {:24} {}'.format('--try-batch-size', args.try_batch_size))
 
@@ -108,9 +121,11 @@ def parse_args():
 
 
 def train(args):
-    ower_dir_path = args.ower_dir
+    samples_dir_path = args.samples_dir
     class_count = args.class_count
     sent_count = args.sent_count
+    split_dir_path = args.split_dir
+    texter_pkl_path = args.texter_pkl
 
     batch_size = args.batch_size
     device = args.device
@@ -118,51 +133,68 @@ def train(args):
     log_dir = args.log_dir
     log_steps = args.log_steps
     lr = args.lr
-    model_name = args.model
-    save_dir = args.save_dir
+    overwrite = args.overwrite
     sent_len = args.sent_len
     try_batch_size = args.try_batch_size
 
     #
-    # Check that (input) OWER Directory exists
+    # Check that (input) POWER Samples Directory exists
     #
 
-    ower_dir = OwerDir(Path(ower_dir_path))
-    ower_dir.check()
+    logging.info('Check that (input) POWER Samples Directory exists ...')
+
+    samples_dir = SamplesDir(Path(samples_dir_path))
+    samples_dir.check()
 
     #
-    # Create (output) save dir if it does not exist already
+    # Check that (input) POWER Split Directory exists
     #
 
-    if save_dir is not None:
-        os.makedirs(save_dir, exist_ok=True)
+    logging.info('Check that (input) POWER Split Directory exists ...')
+
+    split_dir = SplitDir(Path(split_dir_path))
+    split_dir.check()
 
     #
-    # Create model and tokenizer
+    # Check that (output) POWER Texter PKL does not exist
     #
+
+    logging.info('Check that (output) POWER Texter PKL does not exist ...')
+
+    texter_pkl = TexterPkl(Path(texter_pkl_path))
+
+    if not overwrite:
+        texter_pkl.check(should_exist=False)
+
+    #
+    # Load entity/relation labels
+    #
+
+    logging.info('Load entity/relation labels ...')
+
+    ent_to_lbl = split_dir.entities_tsv.load()
+    rel_to_lbl = split_dir.relations_tsv.load()
+
+    #
+    # Create Texter
+    #
+
+    rel_tail_freq_lbl_tuples = samples_dir.classes_tsv.load()
+
+    classes = [(Rel(rel, rel_to_lbl[rel]), Ent(tail, ent_to_lbl[tail]))
+               for rel, tail, _, _ in rel_tail_freq_lbl_tuples]
 
     pre_trained = 'distilbert-base-uncased'
-    marker_tokens = ['[MENTION_START]', '[MENTION_END]']
-
-    if model_name == 'base-bert':
-        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
-        tokenizer.add_tokens(marker_tokens, special_tokens=True)
-        classifier = BaseBert(pre_trained, class_count)
-
-    elif model_name == 'ower-bert':
-        tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
-        tokenizer.add_tokens(marker_tokens, special_tokens=True)
-        classifier = OwerBert(pre_trained, class_count, sent_count)
-
-    else:
-        raise
+    texter = Texter(pre_trained, classes)
 
     #
     # Load datasets and create dataloaders
     #
 
-    train_set = ower_dir.train_samples_tsv.load(class_count, sent_count)
-    valid_set = ower_dir.valid_samples_tsv.load(class_count, sent_count)
+    logging.info('Load datasets and create dataloaders ...')
+
+    train_set = samples_dir.train_samples_tsv.load(class_count, sent_count)
+    valid_set = samples_dir.valid_samples_tsv.load(class_count, sent_count)
 
     def generate_batch(batch: List[Sample]) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
@@ -181,9 +213,10 @@ def train(args):
 
         flat_sents_batch = [sent for sents in sents_batch for sent in sents]
 
-        encoded = tokenizer(flat_sents_batch, padding=True, truncation=True, max_length=sent_len, return_tensors='pt')
+        encoded = texter.tokenizer(flat_sents_batch, padding=True, truncation=True, max_length=sent_len,
+                                   return_tensors='pt')
 
-        b_size = len(ent_batch)  # usually b_size == batch_size, except for last batch in dataset
+        b_size = len(ent_batch)  # usually b_size == batch_size, except for last batch in samples
         tok_lists_batch = encoded.input_ids.reshape(b_size, sent_count, -1)
         masks_batch = encoded.attention_mask.reshape(b_size, sent_count, -1)
 
@@ -196,6 +229,8 @@ def train(args):
     # Calc class weights
     #
 
+    logging.info('Calc class weights ...')
+
     _, _, train_classes_stack, _ = zip(*train_set)
     train_freqs = np.array(train_classes_stack).mean(axis=0)
 
@@ -205,15 +240,17 @@ def train(args):
     # Prepare training
     #
 
-    classifier = classifier.to(device)
+    logging.info('Prepare training ...')
+
+    texter = texter.to(device)
 
     criterion = BCEWithLogitsLoss(pos_weight=class_weights.to(device))
 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in classifier.named_parameters() if not any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in texter.named_parameters() if not any(nd in n for nd in no_decay)],
          'weight_decay': 0.01},
-        {'params': [p for n, p in classifier.named_parameters() if any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in texter.named_parameters() if any(nd in n for nd in no_decay)],
          'weight_decay': 0.0}
     ]
 
@@ -222,14 +259,16 @@ def train(args):
     writer = SummaryWriter(log_dir=log_dir)
 
     #
-    # Training
+    # Train
     #
+
+    logging.info('Train ...')
 
     best_valid_f1 = 0
 
     # Global progress for Tensorboard
-    train_progress = 0
-    valid_progress = 0
+    train_steps = 0
+    valid_steps = 0
 
     for epoch in range(epoch_count):
 
@@ -242,16 +281,16 @@ def train(args):
         # Train
         #
 
-        classifier.train()
+        texter.train()
 
         for _, sents_batch, masks_batch, gt_batch in tqdm(train_loader, desc=f'Epoch {epoch}'):
-            train_progress += len(sents_batch)
+            train_steps += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device).float()
 
-            logits_batch = classifier(sents_batch, masks_batch)
+            logits_batch = texter(sents_batch, masks_batch)[0]
             loss = criterion(logits_batch, gt_batch)
 
             optimizer.zero_grad()
@@ -273,15 +312,15 @@ def train(args):
             epoch_metrics['train']['gt_classes_stack'] += step_gt_batch
 
             if log_steps:
-                writer.add_scalars('loss', {'train': step_loss}, train_progress)
+                writer.add_scalars('loss', {'train': step_loss}, train_steps)
 
                 step_metrics = {'train': {
                     'pred_classes_stack': step_pred_batch,
                     'gt_classes_stack': step_gt_batch
                 }}
 
-                log_class_metrics(step_metrics, writer, train_progress, class_count)
-                log_macro_metrics(step_metrics, writer, train_progress)
+                log_class_metrics(step_metrics, writer, train_steps, class_count)
+                log_macro_metrics(step_metrics, writer, train_steps)
 
             if try_batch_size:
                 break
@@ -290,16 +329,16 @@ def train(args):
         # Validate
         #
 
-        classifier.eval()
+        texter.eval()
 
         for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader, desc=f'Epoch {epoch}'):
-            valid_progress += len(sents_batch)
+            valid_steps += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device).float()
 
-            logits_batch = classifier(sents_batch, masks_batch)
+            logits_batch = texter(sents_batch, masks_batch)[0]
             loss = criterion(logits_batch, gt_batch)
 
             #
@@ -317,15 +356,15 @@ def train(args):
             epoch_metrics['valid']['gt_classes_stack'] += step_gt_batch
 
             if log_steps:
-                writer.add_scalars('loss', {'valid': step_loss}, valid_progress)
+                writer.add_scalars('loss', {'valid': step_loss}, valid_steps)
 
                 step_metrics = {'valid': {
                     'pred_classes_stack': step_pred_batch,
                     'gt_classes_stack': step_gt_batch
                 }}
 
-                log_class_metrics(step_metrics, writer, valid_progress, class_count)
-                log_macro_metrics(step_metrics, writer, valid_progress)
+                log_class_metrics(step_metrics, writer, valid_steps, class_count)
+                log_macro_metrics(step_metrics, writer, valid_steps)
 
             if try_batch_size:
                 break
@@ -347,12 +386,12 @@ def train(args):
         valid_f1 = log_macro_metrics(epoch_metrics, writer, epoch)
 
         #
-        # Store model
+        # Persist Texter
         #
 
-        if (save_dir is not None) and (valid_f1 > best_valid_f1):
+        if valid_f1 > best_valid_f1:
             best_valid_f1 = valid_f1
-            torch.save(classifier.state_dict(), f'{save_dir}/model.pt')
+            texter_pkl.save(texter)
 
         if try_batch_size:
             break
