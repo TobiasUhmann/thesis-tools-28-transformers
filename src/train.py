@@ -478,8 +478,10 @@ def train(args):
         test_loss = test_metrics['test']['loss'] / len(test_loader)
         logging.info(f'Test Loss = {test_loss}')
 
-        prec, rec, f1, _ = precision_recall_fscore_support(test_metrics['gt_stack'], test_metrics['pred_stack'],
-                                                           average='macro', zero_division=0)
+        prec, rec, f1, _ = precision_recall_fscore_support(test_metrics['test']['gt_stack'],
+                                                           test_metrics['test']['pred_stack'],
+                                                           average='macro',
+                                                           zero_division=0)
 
         eval_yml.save({'precision': f'{prec:.4f}',
                        'recall': f'{rec:.4f}',
