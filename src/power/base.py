@@ -47,7 +47,7 @@ class Base(Module):
 
         return preds
 
-    def forward(self, tok_lists_batch: Tensor, masks_batch: Tensor) -> Tensor:
+    def forward(self, tok_lists_batch: Tensor, masks_batch: Tensor) -> Tuple[Tensor, None]:
         """
         :param    tok_lists_batch:  IntTensor[batch_size, sent_count, sent_len]
         :param    masks_batch:      IntTensor[batch_size, sent_count, sent_len]
@@ -83,4 +83,4 @@ class Base(Module):
 
         logits_batch = flat_logits_batch.reshape(batch_size, sent_count, class_count).mean(dim=1)
 
-        return logits_batch
+        return logits_batch, None
