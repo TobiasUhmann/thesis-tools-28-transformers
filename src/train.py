@@ -314,7 +314,7 @@ def train(args):
 
     logging.info('Train ...')
 
-    best_valid_f1 = 0
+    best_valid_f1 = -1
 
     # Global progress for Tensorboard
     train_steps = 0
