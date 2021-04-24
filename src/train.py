@@ -15,6 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from transformers import AdamW
 
+from data.power.eval_yml import EvalYml
 from data.power.samples.samples_dir import SamplesDir
 from data.power.samples.samples_tsv import Sample
 from data.power.split.split_dir import SplitDir
@@ -55,6 +56,9 @@ def parse_args():
     parser.add_argument('texter_pkl', metavar='texter-pkl',
                         help='Path to (output) POWER Texter PKL')
 
+    parser.add_argument('eval_yml', metavar='eval_yml',
+                        help='Path to (output) POWER Eval YML')
+
     device_choices = ['cpu', 'cuda']
     default_device = 'cuda' if torch.cuda.is_available() else 'cpu'
     parser.add_argument('--device', choices=device_choices, default=default_device,
@@ -91,6 +95,9 @@ def parse_args():
                         help='Sentence length short sentences are padded and long sentences cropped to'
                              ' (default: {})'.format(default_sent_len))
 
+    parser.add_argument('--test', dest='test', action='store_true',
+                        help='Evaluate on test data after training')
+
     parser.add_argument('--try-batch-size', dest='try_batch_size', action='store_true',
                         help='Try to perform a single train and valid loop to see whether the batch_size is ok')
 
@@ -106,6 +113,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('sent-count', args.sent_count))
     logging.info('    {:24} {}'.format('split-dir', args.split_dir))
     logging.info('    {:24} {}'.format('texter-pkl', args.texter_pkl))
+    logging.info('    {:24} {}'.format('eval-yml', args.eval_yml))
     logging.info('    {:24} {}'.format('--batch-size', args.batch_size))
     logging.info('    {:24} {}'.format('--device', args.device))
     logging.info('    {:24} {}'.format('--epoch-count', args.epoch_count))
@@ -115,6 +123,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('--overwrite', args.overwrite))
     logging.info('    {:24} {}'.format('--random-seed', args.random_seed))
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
+    logging.info('    {:24} {}'.format('--test', args.test))
     logging.info('    {:24} {}'.format('--try-batch-size', args.try_batch_size))
 
     return args
@@ -126,6 +135,7 @@ def train(args):
     sent_count = args.sent_count
     split_dir_path = args.split_dir
     texter_pkl_path = args.texter_pkl
+    eval_yml_path = args.eval_yml
 
     batch_size = args.batch_size
     device = args.device
@@ -135,6 +145,7 @@ def train(args):
     lr = args.lr
     overwrite = args.overwrite
     sent_len = args.sent_len
+    test = args.test
     try_batch_size = args.try_batch_size
 
     #
@@ -167,6 +178,17 @@ def train(args):
         texter_pkl.check(should_exist=False)
 
     #
+    # Check that (output) POWER Eval YML does not exist
+    #
+
+    logging.info('Check that (output) POWER Eval YML does not exist ...')
+
+    eval_yml = EvalYml(Path(eval_yml_path))
+
+    if not overwrite:
+        eval_yml.check(should_exist=False)
+
+    #
     # Load entity/relation labels
     #
 
@@ -195,6 +217,7 @@ def train(args):
 
     train_set = samples_dir.train_samples_tsv.load(class_count, sent_count)
     valid_set = samples_dir.valid_samples_tsv.load(class_count, sent_count)
+    test_set = samples_dir.test_samples_tsv.load(class_count, sent_count)
 
     def generate_batch(batch: List[Sample]) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
@@ -224,6 +247,7 @@ def train(args):
 
     train_loader = DataLoader(train_set, batch_size=batch_size, collate_fn=generate_batch, shuffle=True)
     valid_loader = DataLoader(valid_set, batch_size=batch_size, collate_fn=generate_batch)
+    test_loader = DataLoader(test_set, batch_size=batch_size, collate_fn=generate_batch)
 
     #
     # Calc class weights
@@ -395,6 +419,76 @@ def train(args):
 
         if try_batch_size:
             break
+
+    #
+    # Load best Texter and test
+    #
+
+    if test:
+        texter = texter_pkl.load()
+
+        test_progress = 0
+        epoch_metrics = {
+            'test': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
+        }
+
+        with torch.no_grad():
+            for _, sents_batch, gt_batch, in tqdm(test_loader, desc=f'Test'):
+                test_progress += len(sents_batch)
+
+                sents_batch = sents_batch.to(device)
+                gt_batch = gt_batch.to(device).float()
+
+                logits_batch = texter(sents_batch)
+                loss = criterion(logits_batch, gt_batch)
+
+                #
+                # Log metrics
+                #
+
+                pred_batch = (logits_batch > 0).int()
+
+                step_loss = loss.item()
+                step_pred_batch = pred_batch.cpu().numpy().tolist()
+                step_gt_batch = gt_batch.cpu().numpy().tolist()
+
+                epoch_metrics['test']['loss'] += step_loss
+                epoch_metrics['test']['pred_classes_stack'] += step_pred_batch
+                epoch_metrics['test']['gt_classes_stack'] += step_gt_batch
+
+                if log_steps:
+                    writer.add_scalars('loss', {'test': step_loss}, test_progress)
+
+                    step_metrics = {'test': {
+                        'pred_classes_stack': step_pred_batch,
+                        'gt_classes_stack': step_gt_batch
+                    }}
+
+                    log_class_metrics(step_metrics, None, test_progress, class_count)
+                    log_macro_metrics(step_metrics, None, test_progress)
+
+        #
+        # Log loss
+        #
+
+        test_loss = epoch_metrics['test']['loss'] / len(test_loader)
+        logging.info(f'Test Loss = {test_loss}')
+
+        #
+        # Log metrics
+        #
+
+        log_class_metrics(epoch_metrics, None, -1, class_count)
+
+        for split, metrics in epoch_metrics.items():
+            prec, rec, f1, _ = precision_recall_fscore_support(metrics['gt_classes_stack'],
+                                                               metrics['pred_classes_stack'],
+                                                               average='macro',
+                                                               zero_division=0)
+
+            eval_yml.save({'precision': f'{prec:.4f}',
+                           'recall': f'{rec:.4f}',
+                           'f1': f'{f1:.4f}'})
 
 
 def log_class_metrics(data: Dict, writer: SummaryWriter, x: int, class_count: int) -> None:

@@ -26,6 +26,7 @@ def main():
     args.lr = 1e-5
     # args.save_dir
     args.sent_len = 64
+    args.text = True
 
     # Datasets with respective sentence counts and appropriate batch sizes.
     # Start out with twice the batch size that works on a GTX 1080 Ti with 11GB RAM.
