@@ -1,5 +1,5 @@
 """
-The `POWER Facts TSVs` stores triples using RIDs.
+The `Power Facts TSVs` stores triples using RIDs.
 
 **Example**
 

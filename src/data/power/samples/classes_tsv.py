@@ -1,6 +1,6 @@
 """
-The `POWER Classes TSV` gives detailed information about the classes used in
-the `POWER Samples TSV`s.
+The `Power Classes TSV` gives detailed information about the classes used in
+the `Power Samples TSV`s.
 """
 
 import csv

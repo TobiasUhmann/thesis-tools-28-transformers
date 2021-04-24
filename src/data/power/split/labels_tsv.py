@@ -1,5 +1,5 @@
 """
-The `POWER Labels TSV` contains the entities' or relations' labels.
+The `Power Labels TSV` contains the entities' or relations' labels.
 
 **Example**
 

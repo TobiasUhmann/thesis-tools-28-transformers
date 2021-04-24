@@ -1,21 +1,21 @@
 """
-The `POWER Samples Directory` contains the input files required for training the
-`POWER Classifier`. The `POWER Temp Directory` keeps intermediate files
+The `Power Samples Directory` contains the input files required for training the
+`Power Classifier`. The `Power Temp Directory` keeps intermediate files
 for debugging purposes.
 
 **Structure**
 
 ::
 
-    power/                 # POWER Samples Directory
+    power/                 # Power Samples Directory
 
-        tmp/               # POWER Temp Directory
+        tmp/               # Power Temp Directory
 
-        classes.tsv        # POWER Classes TSV
+        classes.tsv        # Power Classes TSV
 
-        test_samples.tsv   # POWER Test Samples TSV
-        train_samples.tsv  # POWER Train Samples TSV
-        valid_samples.tsv  # POWER Valid Samples TSV
+        test_samples.tsv   # Power Test Samples TSV
+        train_samples.tsv  # Power Train Samples TSV
+        valid_samples.tsv  # Power Valid Samples TSV
 
 |
 """

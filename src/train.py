@@ -43,7 +43,7 @@ def parse_args():
     parser = ArgumentParser()
 
     parser.add_argument('samples_dir', metavar='samples-dir',
-                        help='Path to (input) POWER Samples Directory')
+                        help='Path to (input) Power Samples Directory')
 
     parser.add_argument('class_count', metavar='class-count', type=int,
                         help='Number of classes distinguished by the classifier')
@@ -52,13 +52,13 @@ def parse_args():
                         help='Number of sentences per entity')
 
     parser.add_argument('split_dir', metavar='split-dir',
-                        help='Path to (input) POWER Split Directory')
+                        help='Path to (input) Power Split Directory')
 
     parser.add_argument('texter_pkl', metavar='texter-pkl',
-                        help='Path to (output) POWER Texter PKL')
+                        help='Path to (output) Power Texter PKL')
 
     parser.add_argument('eval_yml', metavar='eval_yml',
-                        help='Path to (output) POWER Eval YML')
+                        help='Path to (output) Power Eval YML')
 
     default_batch_size = 4
     parser.add_argument('--batch-size', dest='batch_size', type=int, metavar='INT', default=default_batch_size,
@@ -165,28 +165,28 @@ def train(args):
     use_embs = args.use_embs
 
     #
-    # Check that (input) POWER Samples Directory exists
+    # Check that (input) Power Samples Directory exists
     #
 
-    logging.info('Check that (input) POWER Samples Directory exists ...')
+    logging.info('Check that (input) Power Samples Directory exists ...')
 
     samples_dir = SamplesDir(Path(samples_dir_path))
     samples_dir.check()
 
     #
-    # Check that (input) POWER Split Directory exists
+    # Check that (input) Power Split Directory exists
     #
 
-    logging.info('Check that (input) POWER Split Directory exists ...')
+    logging.info('Check that (input) Power Split Directory exists ...')
 
     split_dir = SplitDir(Path(split_dir_path))
     split_dir.check()
 
     #
-    # Check that (output) POWER Texter PKL does not exist
+    # Check that (output) Power Texter PKL does not exist
     #
 
-    logging.info('Check that (output) POWER Texter PKL does not exist ...')
+    logging.info('Check that (output) Power Texter PKL does not exist ...')
 
     texter_pkl = TexterPkl(Path(texter_pkl_path))
 
@@ -194,10 +194,10 @@ def train(args):
         texter_pkl.check(should_exist=False)
 
     #
-    # Check that (output) POWER Eval YML does not exist
+    # Check that (output) Power Eval YML does not exist
     #
 
-    logging.info('Check that (output) POWER Eval YML does not exist ...')
+    logging.info('Check that (output) Power Eval YML does not exist ...')
 
     eval_yml = EvalYml(Path(eval_yml_path))
 

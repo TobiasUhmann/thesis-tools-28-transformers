@@ -1,6 +1,6 @@
 """
-The `POWER Samples TSV` contains the input data for training the
-`POWER Classifier`.
+The `Power Samples TSV` contains the input data for training the
+`Power Classifier`.
 
 * Tabular separated
 * 1 Header Row
