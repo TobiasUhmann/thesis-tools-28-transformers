@@ -24,6 +24,7 @@ def main():
     # args.log_dir
     args.log_steps = False
     args.lr = 1e-5
+    args.model = 'power'
     # args.save_dir
     args.sent_len = 64
     args.text = True

@@ -22,6 +22,7 @@ from data.power.split.split_dir import SplitDir
 from data.power.texter_pkl import TexterPkl
 from models.ent import Ent
 from models.rel import Rel
+from power.base import Base
 from power.texter import Texter
 
 
@@ -84,6 +85,11 @@ def parse_args():
     parser.add_argument('--lr', dest='lr', type=float, metavar='FLOAT', default=default_learning_rate,
                         help='Learning rate (default: {})'.format(default_learning_rate))
 
+    model_choices = ['base', 'power']
+    default_model_choice = 'power'
+    parser.add_argument('--model', dest='model', choices=model_choices, default=default_model_choice,
+                        help='One of {} (default: {})'.format(model_choices, default_model_choice))
+
     parser.add_argument('--overwrite', dest='overwrite', action='store_true',
                         help='Overwrite output files if they already exist')
 
@@ -120,6 +126,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('--log-dir', args.log_dir))
     logging.info('    {:24} {}'.format('--log-steps', args.log_steps))
     logging.info('    {:24} {}'.format('--lr', args.lr))
+    logging.info('    {:24} {}'.format('--model', args.model))
     logging.info('    {:24} {}'.format('--overwrite', args.overwrite))
     logging.info('    {:24} {}'.format('--random-seed', args.random_seed))
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
@@ -143,6 +150,7 @@ def train(args):
     log_dir = args.log_dir
     log_steps = args.log_steps
     lr = args.lr
+    model_name = args.model
     overwrite = args.overwrite
     sent_len = args.sent_len
     test = args.test
@@ -198,7 +206,7 @@ def train(args):
     rel_to_lbl = split_dir.relations_tsv.load()
 
     #
-    # Create Texter
+    # Create model
     #
 
     rel_tail_freq_lbl_tuples = samples_dir.classes_tsv.load()
@@ -207,7 +215,13 @@ def train(args):
                for rel, tail, _, _ in rel_tail_freq_lbl_tuples]
 
     pre_trained = 'distilbert-base-uncased'
-    texter = Texter(pre_trained, classes)
+
+    if model_name == 'base':
+        model = Base(pre_trained, classes).to(device)
+    elif model_name == 'power':
+        model = Texter(pre_trained, classes).to(device)
+    else:
+        raise ValueError('Invalid model "{}". Must be one of {}.'.format(model_name, ['base', 'power']))
 
     #
     # Load datasets and create dataloaders
@@ -236,7 +250,7 @@ def train(args):
 
         flat_sents_batch = [sent for sents in sents_batch for sent in sents]
 
-        encoded = texter.tokenizer(flat_sents_batch, padding=True, truncation=True, max_length=sent_len,
+        encoded = model.tokenizer(flat_sents_batch, padding=True, truncation=True, max_length=sent_len,
                                    return_tensors='pt')
 
         b_size = len(ent_batch)  # usually b_size == batch_size, except for last batch in samples
@@ -266,15 +280,15 @@ def train(args):
 
     logging.info('Prepare training ...')
 
-    texter = texter.to(device)
+    model = model.to(device)
 
     criterion = BCEWithLogitsLoss(pos_weight=class_weights.to(device))
 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in texter.named_parameters() if not any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
          'weight_decay': 0.01},
-        {'params': [p for n, p in texter.named_parameters() if any(nd in n for nd in no_decay)],
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
          'weight_decay': 0.0}
     ]
 
@@ -305,7 +319,7 @@ def train(args):
         # Train
         #
 
-        texter.train()
+        model.train()
 
         for _, sents_batch, masks_batch, gt_batch in tqdm(train_loader, desc=f'Epoch {epoch}'):
             train_steps += len(sents_batch)
@@ -314,7 +328,7 @@ def train(args):
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device).float()
 
-            logits_batch = texter(sents_batch, masks_batch)[0]
+            logits_batch = model(sents_batch, masks_batch)[0]
             loss = criterion(logits_batch, gt_batch)
 
             optimizer.zero_grad()
@@ -353,7 +367,7 @@ def train(args):
         # Validate
         #
 
-        texter.eval()
+        model.eval()
 
         for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader, desc=f'Epoch {epoch}'):
             valid_steps += len(sents_batch)
@@ -362,7 +376,7 @@ def train(args):
             masks_batch = masks_batch.to(device)
             gt_batch = gt_batch.to(device).float()
 
-            logits_batch = texter(sents_batch, masks_batch)[0]
+            logits_batch = model(sents_batch, masks_batch)[0]
             loss = criterion(logits_batch, gt_batch)
 
             #
@@ -415,7 +429,7 @@ def train(args):
 
         if valid_f1 > best_valid_f1:
             best_valid_f1 = valid_f1
-            texter_pkl.save(texter)
+            texter_pkl.save(model)
 
         if try_batch_size:
             break
@@ -425,7 +439,7 @@ def train(args):
     #
 
     if test:
-        texter = texter_pkl.load()
+        model = texter_pkl.load()
 
         test_progress = 0
         epoch_metrics = {
@@ -439,7 +453,7 @@ def train(args):
                 sents_batch = sents_batch.to(device)
                 gt_batch = gt_batch.to(device).float()
 
-                logits_batch = texter(sents_batch)
+                logits_batch = model(sents_batch)
                 loss = criterion(logits_batch, gt_batch)
 
                 #
