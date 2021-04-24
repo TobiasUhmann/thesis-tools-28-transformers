@@ -193,6 +193,8 @@ def train(args):
     if not overwrite:
         texter_pkl.check(should_exist=False)
 
+    texter_pkl.path.parent.mkdir(parents=True, exist_ok=True)
+
     #
     # Check that (output) Power Eval YML does not exist
     #
@@ -203,6 +205,8 @@ def train(args):
 
     if not overwrite:
         eval_yml.check(should_exist=False)
+
+    eval_yml.path.parent.mkdir(parents=True, exist_ok=True)
 
     #
     # Load entity/relation labels
@@ -478,6 +482,9 @@ def train(args):
             test_metrics['test']['loss'] += step_loss
             test_metrics['test']['pred_stack'] += step_pred_batch
             test_metrics['test']['gt_stack'] += step_gt_batch
+
+            if try_batch_size:
+                break
 
         #
         # Calc and persist test metrics
