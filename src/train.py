@@ -60,15 +60,15 @@ def parse_args():
     parser.add_argument('eval_yml', metavar='eval_yml',
                         help='Path to (output) POWER Eval YML')
 
+    default_batch_size = 4
+    parser.add_argument('--batch-size', dest='batch_size', type=int, metavar='INT', default=default_batch_size,
+                        help='Batch size (default: {})'.format(default_batch_size))
+
     device_choices = ['cpu', 'cuda']
     default_device = 'cuda' if torch.cuda.is_available() else 'cpu'
     parser.add_argument('--device', choices=device_choices, default=default_device,
                         help='Where to perform tensor operations, one of {} (default: {})'.format(
                             device_choices, default_device))
-
-    default_batch_size = 4
-    parser.add_argument('--batch-size', dest='batch_size', type=int, metavar='INT', default=default_batch_size,
-                        help='Batch size (default: {})'.format(default_batch_size))
 
     default_epoch_count = 20
     parser.add_argument('--epoch-count', dest='epoch_count', type=int, metavar='INT', default=default_epoch_count,
@@ -107,6 +107,12 @@ def parse_args():
     parser.add_argument('--try-batch-size', dest='try_batch_size', action='store_true',
                         help='Try to perform a single train and valid loop to see whether the batch_size is ok')
 
+    default_use_embs = 'cls'
+    use_embs_choices = ['cls', 'no-cls', 'mask', 'all']
+    parser.add_argument('--use-embs', dest='use_embs', choices=use_embs_choices, default=default_use_embs,
+                        help="Which of BERT's token embeddings to gather sentence embedding, one of {}"
+                             " (default: {})".format(use_embs_choices, default_use_embs))
+
     args = parser.parse_args()
 
     #
@@ -132,6 +138,7 @@ def parse_args():
     logging.info('    {:24} {}'.format('--sent-len', args.sent_len))
     logging.info('    {:24} {}'.format('--test', args.test))
     logging.info('    {:24} {}'.format('--try-batch-size', args.try_batch_size))
+    logging.info('    {:24} {}'.format('--use-embs', args.use_embs))
 
     return args
 
@@ -155,6 +162,7 @@ def train(args):
     sent_len = args.sent_len
     test = args.test
     try_batch_size = args.try_batch_size
+    use_embs = args.use_embs
 
     #
     # Check that (input) POWER Samples Directory exists
@@ -219,7 +227,7 @@ def train(args):
     if model_name == 'base':
         model = Base(pre_trained, classes).to(device)
     elif model_name == 'power':
-        model = Texter(pre_trained, classes).to(device)
+        model = Texter(pre_trained, classes, use_embs=use_embs).to(device)
     else:
         raise ValueError('Invalid model "{}". Must be one of {}.'.format(model_name, ['base', 'power']))
 

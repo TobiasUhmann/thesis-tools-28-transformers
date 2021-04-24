@@ -21,7 +21,9 @@ class Texter(Module):
 
     classes: List[Tuple[Rel, Ent]]
 
-    def __init__(self, pre_trained: str, classes: List[Tuple[Rel, Ent]]):
+    use_embs: str
+
+    def __init__(self, pre_trained: str, classes: List[Tuple[Rel, Ent]], use_embs='cls'):
         super().__init__()
 
         self.tokenizer = DistilBertTokenizer.from_pretrained(pre_trained)
@@ -37,6 +39,8 @@ class Texter(Module):
         self.multi_bias = Parameter(torch.randn(class_count))
 
         self.classes = classes
+
+        self.use_embs = use_embs
 
     def predict(self, ent: Ent, sents: List[str]) -> List[Pred]:
         encoded = self.tokenizer(sents, padding=True, truncation=True, max_length=64, return_tensors='pt')
@@ -81,8 +85,20 @@ class Texter(Module):
         # < flat_tok_batch   (batch_size * sent_count, sent_len)
         # < flat_mask_batch  (batch_size * sent_count, sent_len)
 
-        flat_sent_batch = self.bert(input_ids=flat_tok_batch, attention_mask=flat_mask_batch) \
-            .last_hidden_state.mean(dim=1)
+        flat_tok_embs_batch = self.bert(input_ids=flat_tok_batch, attention_mask=flat_mask_batch).last_hidden_state
+
+        if self.use_embs == 'cls':
+            flat_sent_batch = flat_tok_embs_batch[:, 0, :]
+        elif self.use_embs == 'no-cls':
+            flat_mask_batch[:, 0] = 0
+            flat_sent_batch = torch.mean(flat_tok_embs_batch * flat_mask_batch.unsqueeze(-1), dim=-2)
+        elif self.use_embs == 'mask':
+            flat_sent_batch = torch.mean(flat_tok_embs_batch * flat_mask_batch.unsqueeze(-1), dim=-2)
+        elif self.use_embs == 'all':
+            flat_sent_batch = flat_tok_embs_batch.mean(dim=-2)
+        else:
+            raise ValueError('Invalid use_embs "{}". Must be one of {}.'.format(
+                self.use_embs, ['cls', 'no-cls', 'mask', 'all']))
 
         # Restore batch shape
         #
