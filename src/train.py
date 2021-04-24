@@ -440,69 +440,50 @@ def train(args):
 
     if test:
         model = texter_pkl.load()
+        model.eval()
 
         test_progress = 0
-        epoch_metrics = {
-            'test': {'loss': 0.0, 'pred_classes_stack': [], 'gt_classes_stack': []}
+        test_metrics = {
+            'test': {'loss': 0.0, 'pred_stack': [], 'gt_stack': []}
         }
 
-        with torch.no_grad():
-            for _, sents_batch, gt_batch, in tqdm(test_loader, desc=f'Test'):
-                test_progress += len(sents_batch)
+        for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader, desc='Test'):
+            test_progress += len(sents_batch)
 
-                sents_batch = sents_batch.to(device)
-                gt_batch = gt_batch.to(device).float()
+            sents_batch = sents_batch.to(device)
+            masks_batch = masks_batch.to(device)
+            gt_batch = gt_batch.to(device).float()
 
-                logits_batch = model(sents_batch)
-                loss = criterion(logits_batch, gt_batch)
+            logits_batch = model(sents_batch, masks_batch)[0]
+            loss = criterion(logits_batch, gt_batch)
 
-                #
-                # Log metrics
-                #
+            #
+            # Track test metrics
+            #
 
-                pred_batch = (logits_batch > 0).int()
+            pred_batch = (logits_batch > 0).int()
 
-                step_loss = loss.item()
-                step_pred_batch = pred_batch.cpu().numpy().tolist()
-                step_gt_batch = gt_batch.cpu().numpy().tolist()
+            step_loss = loss.item()
+            step_pred_batch = pred_batch.cpu().numpy().tolist()
+            step_gt_batch = gt_batch.cpu().numpy().tolist()
 
-                epoch_metrics['test']['loss'] += step_loss
-                epoch_metrics['test']['pred_classes_stack'] += step_pred_batch
-                epoch_metrics['test']['gt_classes_stack'] += step_gt_batch
-
-                if log_steps:
-                    writer.add_scalars('loss', {'test': step_loss}, test_progress)
-
-                    step_metrics = {'test': {
-                        'pred_classes_stack': step_pred_batch,
-                        'gt_classes_stack': step_gt_batch
-                    }}
-
-                    log_class_metrics(step_metrics, None, test_progress, class_count)
-                    log_macro_metrics(step_metrics, None, test_progress)
+            test_metrics['test']['loss'] += step_loss
+            test_metrics['test']['pred_stack'] += step_pred_batch
+            test_metrics['test']['gt_stack'] += step_gt_batch
 
         #
-        # Log loss
+        # Calc and persist test metrics
         #
 
-        test_loss = epoch_metrics['test']['loss'] / len(test_loader)
+        test_loss = test_metrics['test']['loss'] / len(test_loader)
         logging.info(f'Test Loss = {test_loss}')
 
-        #
-        # Log metrics
-        #
+        prec, rec, f1, _ = precision_recall_fscore_support(test_metrics['gt_stack'], test_metrics['pred_stack'],
+                                                           average='macro', zero_division=0)
 
-        log_class_metrics(epoch_metrics, None, -1, class_count)
-
-        for split, metrics in epoch_metrics.items():
-            prec, rec, f1, _ = precision_recall_fscore_support(metrics['gt_classes_stack'],
-                                                               metrics['pred_classes_stack'],
-                                                               average='macro',
-                                                               zero_division=0)
-
-            eval_yml.save({'precision': f'{prec:.4f}',
-                           'recall': f'{rec:.4f}',
-                           'f1': f'{f1:.4f}'})
+        eval_yml.save({'precision': f'{prec:.4f}',
+                       'recall': f'{rec:.4f}',
+                       'f1': f'{f1:.4f}'})
 
 
 def log_class_metrics(data: Dict, writer: SummaryWriter, x: int, class_count: int) -> None:
