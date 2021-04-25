@@ -459,7 +459,7 @@ def train(args):
             'test': {'loss': 0.0, 'pred_stack': [], 'gt_stack': []}
         }
 
-        for _, sents_batch, masks_batch, gt_batch in tqdm(valid_loader, desc='Test'):
+        for _, sents_batch, masks_batch, gt_batch in tqdm(test_loader, desc='Test'):
             test_progress += len(sents_batch)
 
             sents_batch = sents_batch.to(device)
