@@ -160,11 +160,11 @@ def main():
             args.samples_dir = f'data/power/samples-v5/{dataset}/'
             args.sent_count = sent_count
             args.split_dir = f'data/power/split-v2/{split_dir}/'
-            args.texter_pkl = f'data/power/texter-v2/final/{dataset}_{model}_{use_embs}.pkl'
-            args.eval_yml = f'data/power/eval-v1/final/{dataset}_{model}_{use_embs}.yml'
+            args.texter_pkl = f'data/power/texter-v2/use_embs/{dataset}_{model}_{use_embs}.pkl'
+            args.eval_yml = f'data/power/eval-v1/use_embs/{dataset}_{model}_{use_embs}.yml'
 
             args.batch_size = batch_size
-            args.log_dir = f'runs/final/{dataset}_{model}_{use_embs}/'
+            args.log_dir = f'runs/use_embs/{dataset}_{model}_{use_embs}/'
             args.model = model
             args.overwrite = False
             args.try_batch_size = False

@@ -33,7 +33,7 @@ def main():
     args.sent_len = 64
     args.test = True
     # args.try_batch_size
-    args.use_embs = 'cls'
+    args.use_embs = 'mask'
 
     # Datasets with respective sentence counts and appropriate batch sizes.
     # Start out with twice the batch size that works on a GTX 1080 Ti with 11GB RAM.

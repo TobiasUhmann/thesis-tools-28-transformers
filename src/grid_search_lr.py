@@ -33,7 +33,7 @@ def main():
     args.sent_len = 64
     args.test = True
     # args.try_batch_size
-    args.use_embs = 'cls'
+    args.use_embs = 'mask'
 
     # Datasets with respective sentence counts and appropriate batch sizes.
     # Start out with twice the batch size that works on a GTX 1080 Ti with 11GB RAM.
@@ -160,11 +160,11 @@ def main():
             args.samples_dir = f'data/power/samples-v5/{dataset}/'
             args.sent_count = sent_count
             args.split_dir = f'data/power/split-v2/{split_dir}/'
-            args.texter_pkl = f'data/power/texter-v2/final/{dataset}_{model}_{lr}.pkl'
-            args.eval_yml = f'data/power/eval-v1/final/{dataset}_{model}_{lr}.yml'
+            args.texter_pkl = f'data/power/texter-v2/lr/{dataset}_{model}_{lr}.pkl'
+            args.eval_yml = f'data/power/eval-v1/lr/{dataset}_{model}_{lr}.yml'
 
             args.batch_size = batch_size
-            args.log_dir = f'runs/final/{dataset}_{model}/'
+            args.log_dir = f'runs/lr/{dataset}_{model}/'
             args.lr = lr
             args.model = model
             args.overwrite = False
