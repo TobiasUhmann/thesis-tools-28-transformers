@@ -164,7 +164,7 @@ def main():
             args.eval_yml = f'data/power/eval-v1/lr/{dataset}_{model}_{lr}.yml'
 
             args.batch_size = batch_size
-            args.log_dir = f'runs/lr/{dataset}_{model}/'
+            args.log_dir = f'runs/lr/{dataset}_{model}_{lr}/'
             args.lr = lr
             args.model = model
             args.overwrite = False
