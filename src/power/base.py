@@ -32,13 +32,12 @@ class Base(Module):
 
         self.train()
 
-        logits_batch, softs_batch, = self.forward(encoded.input_ids.unsqueeze(0),
-                                                  encoded.attention_mask.unsqueeze(0))
+        logits_batch, _ = self.forward(encoded.input_ids.unsqueeze(0),
+                                       encoded.attention_mask.unsqueeze(0))
         logits = logits_batch[0]
         probs = Sigmoid()(logits).detach().numpy()
-        softs = softs_batch[0].detach().numpy()
 
-        pred = {Fact(ent, rel, tail): (probs[c].item(), [(sents[i], softs[c][i].item()) for i in range(len(sents))])
+        pred = {Fact(ent, rel, tail): (probs[c].item(), [])
                 for c, (rel, tail) in enumerate(self.classes) if probs[c] > 0.5}
 
         preds = [Pred(fact, conf, sents, []) for fact, (conf, sents) in pred.items()]
